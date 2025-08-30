@@ -31,10 +31,10 @@ python train.py --config configs/car.yaml
 If you don't want to train a LoRA model, you can also use the checkpoint we provide.
 | Types | checkpoints |
 |--------|--------|
-| car-turn | https://drive.google.com/file/d/1nV7LaLVnX1fy9Dcm0PwsyXUc9mT731mr/view?usp=drive_link |
-| zoom-in | https://drive.google.com/file/d/1g8uG4VSnaBxiDaMer46XQcjfY02asjXR/view?usp=drive_link |
-| zoom-out | https://drive.google.com/file/d/1V_N1wpKT-PdECwbSupdGV2rYS_oLG5qS/view?usp=drive_link |
-| dolly | https://drive.google.com/file/d/1WpH48b9jRHzDQXOY0jEU71z1Qwd47iwD/view?usp=drive_link |
+| car-turn | [Google Drive](https://drive.google.com/file/d/1nV7LaLVnX1fy9Dcm0PwsyXUc9mT731mr/view?usp=drive_link) |
+| zoom-in |[Google Drive](https://drive.google.com/file/d/1g8uG4VSnaBxiDaMer46XQcjfY02asjXR/view?usp=drive_link) |
+| zoom-out | [Google Drive](https://drive.google.com/file/d/1V_N1wpKT-PdECwbSupdGV2rYS_oLG5qS/view?usp=drive_link) |
+| dolly | [Google Drive](https://drive.google.com/file/d/1WpH48b9jRHzDQXOY0jEU71z1Qwd47iwD/view?usp=drive_link) |
 
 
 ### Inference
