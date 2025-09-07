@@ -63,7 +63,7 @@ train_data:
   single_video_path: "./test/carturn/car-turn.mp4"
 
   # The prompt when using a single video file
-  single_video_prompt: "A car is running on the room"
+  single_video_prompt: "A car is running on the road."
 
 # Validation data parameters.
 validation_data:
