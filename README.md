@@ -24,7 +24,6 @@ To access the Text-to-Video foundation model(ZeroScope), please click [here](htt
 ### Train
 Please configure your config file according to the path of the downloaded Text-to-Video foundation model, and then execute:
 ```bash
-cd train
 python train.py --config configs/car.yaml
 ```
 
@@ -40,9 +39,8 @@ If you don't want to train a LoRA model, you can also use the checkpoint we prov
 ### Inference
 
 ```bash
-cd ..
 cd infer
-CUDA_VISIBLE_DEVICES=7 python3 infer.py --model your/foundation/model/path/ \
+python3 infer.py --model your/foundation/model/path/ \
     --prompt your/prompt/ \
     --checkpoint_folder your/checkpoints/folder \
     --checkpoint_index 1000 --seed xxx --output_dir outputs/infer/
@@ -56,7 +54,7 @@ If you find this project useful for your research, please consider citing our pa
 @article{liu2025separate,
   title={Separate motion from appearance: Customizing motion via customizing text-to-video diffusion models},
   author={Liu, Huijie and Wang, Jingyun and Ma, Shuai and Hu, Jie and Wei, Xiaoming and Kang, Guoliang},
-  journal={arXiv preprint arXiv:2501.16714},
+  booktitle={Proceedings of the 33nd ACM international conference on multimedia},
   year={2025}
 }
 ```
