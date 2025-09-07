@@ -1,6 +1,6 @@
 
 # Pretrained diffusers model path.
-pretrained_model_path: ".//models/zeroscope_v2_576w/"
+pretrained_model_path: "./models/zeroscope_v2_576w/"
 
 # The folder where your training outputs will be placed.
 output_dir: "./outputs/train/dolly"
