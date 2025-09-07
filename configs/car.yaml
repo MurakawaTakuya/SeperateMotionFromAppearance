@@ -63,14 +63,14 @@ train_data:
   single_video_path: "./test/carturn/car-turn.mp4"
 
   # The prompt when using a single video file
-  single_video_prompt: "A cup in a lab captured with a zoom in."
+  single_video_prompt: "A car is running on the room"
 
 # Validation data parameters.
 validation_data:
 
   # A custom prompt that is different from your training dataset. 
   prompt:
-  - "A wolf standing on a snowy mountain captured with a zoom in."
+  - "A horse is running in the forest."
 
   # Whether or not to sample preview during training (Requires more VRAM).
   sample_preview: True

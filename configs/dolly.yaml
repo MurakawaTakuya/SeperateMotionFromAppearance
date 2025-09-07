@@ -63,14 +63,14 @@ train_data:
   single_video_path: "./test/dolly/dolly_zoom.mp4"
 
   # The prompt when using a single video file
-  single_video_prompt: "A cup in a lab captured with a zoom in."
+  single_video_prompt: "A cup in a lab captured with a dolly zoom."
 
 # Validation data parameters.
 validation_data:
 
   # A custom prompt that is different from your training dataset. 
   prompt:
-  - "A wolf standing on a snowy mountain captured with a zoom in."
+  - "A wolf standing on a snowy mountain captured with a dolly zoom."
 
   # Whether or not to sample preview during training (Requires more VRAM).
   sample_preview: True
