@@ -37,10 +37,11 @@ class LoraInjectedLinear(nn.Module):
         super().__init__()
 
         if r > min(in_features, out_features):
-            #raise ValueError(
+            # raise ValueError(
             #    f"LoRA rank {r} must be less or equal than {min(in_features, out_features)}"
-            #)
-            print(f"LoRA rank {r} is too large. setting to: {min(in_features, out_features)}")
+            # )
+            print(
+                f"LoRA rank {r} is too large. setting to: {min(in_features, out_features)}")
             r = min(in_features, out_features)
 
         self.r = r
@@ -81,26 +82,27 @@ class MultiLoraInjectedLinear(nn.Module):
         super().__init__()
 
         if r > min(in_features, out_features):
-            #raise ValueError(
+            # raise ValueError(
             #    f"LoRA rank {r} must be less or equal than {min(in_features, out_features)}"
-            #)
-            print(f"LoRA rank {r} is too large. setting to: {min(in_features, out_features)}")
+            # )
+            print(
+                f"LoRA rank {r} is too large. setting to: {min(in_features, out_features)}")
             r = min(in_features, out_features)
 
         self.r = r
         self.linear = nn.Linear(in_features, out_features, bias)
 
         for i in range(lora_num):
-            if i==0:
-                self.lora_down =[nn.Linear(in_features, r, bias=False)]
+            if i == 0:
+                self.lora_down = [nn.Linear(in_features, r, bias=False)]
                 self.dropout = [nn.Dropout(dropout_p)]
                 self.lora_up = [nn.Linear(r, out_features, bias=False)]
                 self.scale = scales[i]
                 self.selector = [nn.Identity()]
             else:
                 self.lora_down.append(nn.Linear(in_features, r, bias=False))
-                self.dropout.append( nn.Dropout(dropout_p))
-                self.lora_up.append( nn.Linear(r, out_features, bias=False))
+                self.dropout.append(nn.Dropout(dropout_p))
+                self.lora_up.append(nn.Linear(r, out_features, bias=False))
                 self.scale.append(scales[i])
 
         nn.init.normal_(self.lora_down.weight, std=1 / r)
@@ -143,7 +145,8 @@ class LoraInjectedConv2d(nn.Module):
     ):
         super().__init__()
         if r > min(in_channels, out_channels):
-            print(f"LoRA rank {r} is too large. setting to: {min(in_channels, out_channels)}")
+            print(
+                f"LoRA rank {r} is too large. setting to: {min(in_channels, out_channels)}")
             r = min(in_channels, out_channels)
 
         self.r = r
@@ -211,6 +214,7 @@ class LoraInjectedConv2d(nn.Module):
             self.lora_up.weight.device
         ).to(self.lora_up.weight.dtype)
 
+
 class LoraInjectedConv3d(nn.Module):
     def __init__(
         self,
@@ -225,7 +229,8 @@ class LoraInjectedConv3d(nn.Module):
     ):
         super().__init__()
         if r > min(in_channels, out_channels):
-            print(f"LoRA rank {r} is too large. setting to: {min(in_channels, out_channels)}")
+            print(
+                f"LoRA rank {r} is too large. setting to: {min(in_channels, out_channels)}")
             r = min(in_channels, out_channels)
 
         self.r = r
@@ -288,9 +293,11 @@ class LoraInjectedConv3d(nn.Module):
             self.lora_up.weight.device
         ).to(self.lora_up.weight.dtype)
 
+
 UNET_DEFAULT_TARGET_REPLACE = {"CrossAttention", "Attention", "GEGLU"}
 
-UNET_EXTENDED_TARGET_REPLACE = {"ResnetBlock2D", "CrossAttention", "Attention", "GEGLU"}
+UNET_EXTENDED_TARGET_REPLACE = {
+    "ResnetBlock2D", "CrossAttention", "Attention", "GEGLU"}
 
 TEXT_ENCODER_DEFAULT_TARGET_REPLACE = {"CLIPAttention"}
 
@@ -342,7 +349,8 @@ def _find_modules_v2(
         ancestors = (
             module
             for name, module in model.named_modules()
-            if module.__class__.__name__ in ancestor_class # and ('transformer_in' not in name)
+            # and ('transformer_in' not in name)
+            if module.__class__.__name__ in ancestor_class
         )
     else:
         # this, incase you want to naively iterate over all modules.
@@ -367,7 +375,8 @@ def _find_modules_v2(
                     parent = parent.get_submodule(path.pop(0))
                 # Skip this linear if it's a child of a LoraInjectedLinear
                 if exclude_children_of and any(
-                    [isinstance(parent, _class) for _class in exclude_children_of]
+                    [isinstance(parent, _class)
+                     for _class in exclude_children_of]
                 ):
                     continue
                 if name in ['lora_up', 'dropout', 'lora_down']:
@@ -380,7 +389,8 @@ def _find_modules_old(
     model,
     ancestor_class: Set[str] = DEFAULT_TARGET_REPLACE,
     search_class: List[Type[nn.Module]] = [nn.Linear],
-    exclude_children_of: Optional[List[Type[nn.Module]]] = [LoraInjectedLinear],
+    exclude_children_of: Optional[List[Type[nn.Module]]] = [
+        LoraInjectedLinear],
 ):
     ret = []
     for _module in model.modules():
@@ -440,7 +450,8 @@ def inject_trainable_lora(
         _module._modules[name] = _tmp
 
         require_grad_params.append(_module._modules[name].lora_up.parameters())
-        require_grad_params.append(_module._modules[name].lora_down.parameters())
+        require_grad_params.append(
+            _module._modules[name].lora_down.parameters())
 
         if loras != None:
             _module._modules[name].lora_up.weight = loras.pop(0)
@@ -473,7 +484,8 @@ def inject_trainable_lora_extended(
     if True:
         for target_replace_module_i in target_replace_module:
             for _module, name, _child_module in _find_modules(
-                model, [target_replace_module_i], search_class=[nn.Linear, nn.Conv2d, nn.Conv3d]
+                model, [target_replace_module_i], search_class=[
+                    nn.Linear, nn.Conv2d, nn.Conv3d]
             ):
                 # if name == 'to_q':
                 #     continue
@@ -530,13 +542,17 @@ def inject_trainable_lora_extended(
                     if bias is not None:
                         _tmp.conv.bias = bias
                 # switch the module
-                _tmp.to(_child_module.weight.device).to(_child_module.weight.dtype)
+                _tmp.to(_child_module.weight.device).to(
+                    _child_module.weight.dtype)
                 if bias is not None:
-                    _tmp.to(_child_module.bias.device).to(_child_module.bias.dtype)
+                    _tmp.to(_child_module.bias.device).to(
+                        _child_module.bias.dtype)
 
                 _module._modules[name] = _tmp
-                require_grad_params.append(_module._modules[name].lora_up.parameters())
-                require_grad_params.append(_module._modules[name].lora_down.parameters())
+                require_grad_params.append(
+                    _module._modules[name].lora_up.parameters())
+                require_grad_params.append(
+                    _module._modules[name].lora_down.parameters())
 
                 if loras != None:
                     _module._modules[name].lora_up.weight = loras.pop(0)
@@ -547,7 +563,8 @@ def inject_trainable_lora_extended(
                 names.append(name)
     else:
         for _module, name, _child_module in _find_modules(
-                model, target_replace_module, search_class=[nn.Linear, nn.Conv2d, nn.Conv3d]
+                model, target_replace_module, search_class=[
+                    nn.Linear, nn.Conv2d, nn.Conv3d]
         ):
             if _child_module.__class__ == nn.Linear:
                 weight = _child_module.weight
@@ -607,8 +624,10 @@ def inject_trainable_lora_extended(
                 _tmp.to(_child_module.bias.device).to(_child_module.bias.dtype)
 
             _module._modules[name] = _tmp
-            require_grad_params.append(_module._modules[name].lora_up.parameters())
-            require_grad_params.append(_module._modules[name].lora_down.parameters())
+            require_grad_params.append(
+                _module._modules[name].lora_up.parameters())
+            require_grad_params.append(
+                _module._modules[name].lora_down.parameters())
 
             if loras != None:
                 _module._modules[name].lora_up.weight = loras.pop(0)
@@ -622,18 +641,20 @@ def inject_trainable_lora_extended(
 
 
 def inject_inferable_lora(
-        model, 
-        lora_path='', 
-        unet_replace_modules=["UNet3DConditionModel"], 
-        text_encoder_replace_modules=["CLIPEncoderLayer"],
-        is_extended=False, 
-        r=16
-    ):    
+    model,
+    lora_path='',
+    unet_replace_modules=["UNet3DConditionModel"],
+    text_encoder_replace_modules=["CLIPEncoderLayer"],
+    is_extended=False,
+    r=16
+):
     from transformers.models.clip import CLIPTextModel
     from diffusers import UNet3DConditionModel
 
-    def is_text_model(f): return 'text_encoder' in f and isinstance(model.text_encoder, CLIPTextModel)
-    def is_unet(f): return 'unet' in f and model.unet.__class__.__name__ == "UNet3DConditionModel"
+    def is_text_model(f): return 'text_encoder' in f and isinstance(
+        model.text_encoder, CLIPTextModel)
+    def is_unet(
+        f): return 'unet' in f and model.unet.__class__.__name__ == "UNet3DConditionModel"
 
     if os.path.exists(lora_path):
         try:
@@ -661,11 +682,13 @@ def inject_inferable_lora(
                         print("Successfully loaded UNET LoRa.")
                         continue
 
-                    print("Found a .pt file, but doesn't have the correct name format. (unet.pt, text_encoder.pt)")
+                    print(
+                        "Found a .pt file, but doesn't have the correct name format. (unet.pt, text_encoder.pt)")
 
         except Exception as e:
             print(e)
             print("Couldn't inject LoRA's due to an error.")
+
 
 def extract_lora_ups_down(model, target_replace_module=DEFAULT_TARGET_REPLACE):
 
@@ -676,7 +699,8 @@ def extract_lora_ups_down(model, target_replace_module=DEFAULT_TARGET_REPLACE):
         for _m, _n, _child_module in _find_modules(
             model,
             [target_replace_module_i],
-            search_class=[LoraInjectedLinear, LoraInjectedConv2d, LoraInjectedConv3d],
+            search_class=[LoraInjectedLinear,
+                          LoraInjectedConv2d, LoraInjectedConv3d],
         ):
             loras.append((_child_module.lora_up, _child_module.lora_down))
 
@@ -695,11 +719,13 @@ def extract_lora_child_module(model, target_replace_module=DEFAULT_TARGET_REPLAC
         for _m, _n, _child_module in _find_modules(
             model,
             [target_replace_module_i],
-            search_class=[LoraInjectedLinear, LoraInjectedConv2d, LoraInjectedConv3d],
+            search_class=[LoraInjectedLinear,
+                          LoraInjectedConv2d, LoraInjectedConv3d],
         ):
             loras.append(_child_module)
 
     return loras
+
 
 def extract_lora_as_tensor(
     model, target_replace_module=DEFAULT_TARGET_REPLACE, as_fp16=True
@@ -710,7 +736,8 @@ def extract_lora_as_tensor(
     for _m, _n, _child_module in _find_modules(
         model,
         target_replace_module,
-        search_class=[LoraInjectedLinear, LoraInjectedConv2d, LoraInjectedConv3d],
+        search_class=[LoraInjectedLinear,
+                      LoraInjectedConv2d, LoraInjectedConv3d],
     ):
         up, down = _child_module.realize_as_lora()
         if as_fp16:
@@ -730,7 +757,7 @@ def save_lora_weight(
     path="./lora.pt",
     target_replace_module=DEFAULT_TARGET_REPLACE,
     flag=None
-):  
+):
     weights = []
     for _up, _down in extract_lora_ups_down(
         model, target_replace_module=target_replace_module
@@ -740,11 +767,12 @@ def save_lora_weight(
     if not flag:
         torch.save(weights, path)
     else:
-        weights_new=[]
+        weights_new = []
         for i in range(0, len(weights), 4):
             subset = weights[i+(flag-1)*2:i+(flag-1)*2+2]
             weights_new.extend(subset)
         torch.save(weights_new, path)
+
 
 def save_lora_as_json(model, path="./lora.json"):
     weights = []
@@ -863,7 +891,7 @@ def parse_safeloras(
     loras = {}
     metadata = safeloras.metadata()
 
-    get_name = lambda k: k.split(":")[0]
+    def get_name(k): return k.split(":")[0]
 
     keys = list(safeloras.keys())
     keys.sort(key=get_name)
@@ -947,7 +975,8 @@ def collapse_lora(model, alpha=1.0):
     for _module, name, _child_module in _find_modules(
         model,
         UNET_EXTENDED_TARGET_REPLACE | TEXT_ENCODER_EXTENDED_TARGET_REPLACE,
-        search_class=[LoraInjectedLinear, LoraInjectedConv2d, LoraInjectedConv3d],
+        search_class=[LoraInjectedLinear,
+                      LoraInjectedConv2d, LoraInjectedConv3d],
     ):
 
         if isinstance(_child_module, LoraInjectedLinear):
@@ -986,7 +1015,8 @@ def monkeypatch_or_replace_lora(
     r: Union[int, List[int]] = 4,
 ):
     for _module, name, _child_module in _find_modules(
-        model, target_replace_module, search_class=[nn.Linear, LoraInjectedLinear]
+        model, target_replace_module, search_class=[
+            nn.Linear, LoraInjectedLinear]
     ):
         _source = (
             _child_module.linear
@@ -1033,11 +1063,11 @@ def monkeypatch_or_replace_lora_extended(
         model,
         target_replace_module,
         search_class=[
-            nn.Linear, 
-            nn.Conv2d, 
+            nn.Linear,
+            nn.Conv2d,
             nn.Conv3d,
-            LoraInjectedLinear, 
-            LoraInjectedConv2d, 
+            LoraInjectedLinear,
+            LoraInjectedConv2d,
             LoraInjectedConv3d,
         ],
     ):
@@ -1097,7 +1127,7 @@ def monkeypatch_or_replace_lora_extended(
             if bias is not None:
                 _tmp.conv.bias = bias
 
-        elif _child_module.__class__ == nn.Conv3d or(
+        elif _child_module.__class__ == nn.Conv3d or (
             _child_module.__class__ == LoraInjectedConv3d
         ):
 
@@ -1157,7 +1187,8 @@ def monkeypatch_or_replace_safeloras(models, safeloras):
 
 def monkeypatch_remove_lora(model):
     for _module, name, _child_module in _find_modules(
-        model, search_class=[LoraInjectedLinear, LoraInjectedConv2d, LoraInjectedConv3d]
+        model, search_class=[LoraInjectedLinear,
+                             LoraInjectedConv2d, LoraInjectedConv3d]
     ):
         if isinstance(_child_module, LoraInjectedLinear):
             _source = _child_module.linear
@@ -1190,19 +1221,19 @@ def monkeypatch_remove_lora(model):
                 _tmp.weight = weight
                 if bias is not None:
                     _tmp.bias = bias
-            
+
             if isinstance(_source, nn.Conv3d):
                 _tmp = nn.Conv3d(
-                _source.in_channels,
-                _source.out_channels,
-                bias=_source.bias is not None,
-                kernel_size=_source.kernel_size,
-                padding=_source.padding,
-            )
+                    _source.in_channels,
+                    _source.out_channels,
+                    bias=_source.bias is not None,
+                    kernel_size=_source.kernel_size,
+                    padding=_source.padding,
+                )
 
             _tmp.weight = weight
             if bias is not None:
-                _tmp.bias = bias   
+                _tmp.bias = bias
 
         _module._modules[name] = _tmp
 
@@ -1394,6 +1425,7 @@ def train_patch_pipe(pipe, patch_unet, patch_text):
         collapse_lora(pipe.text_encoder)
         monkeypatch_remove_lora(pipe.text_encoder)
 
+
 @torch.no_grad()
 def inspect_lora(model):
     moved = {}
@@ -1432,7 +1464,8 @@ def save_all(
             ti_path = _ti_lora_path(save_path)
             learned_embeds_dict = {}
             for tok, tok_id in zip(placeholder_tokens, placeholder_token_ids):
-                learned_embeds = text_encoder.get_input_embeddings().weight[tok_id]
+                learned_embeds = text_encoder.get_input_embeddings(
+                ).weight[tok_id]
                 print(
                     f"Current Learned Embeddings for {tok}:, id {tok_id} ",
                     learned_embeds[:4],
@@ -1471,7 +1504,8 @@ def save_all(
 
         if save_ti:
             for tok, tok_id in zip(placeholder_tokens, placeholder_token_ids):
-                learned_embeds = text_encoder.get_input_embeddings().weight[tok_id]
+                learned_embeds = text_encoder.get_input_embeddings(
+                ).weight[tok_id]
                 print(
                     f"Current Learned Embeddings for {tok}:, id {tok_id} ",
                     learned_embeds[:4],

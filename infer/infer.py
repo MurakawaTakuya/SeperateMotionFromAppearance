@@ -21,11 +21,15 @@ from utils.lora_handler import LoraHandler
 from utils.ddim_utils import ddim_inversion
 import imageio
 import ast
+
+
 def export_to_video(video_frames, output_video_path, fps):
     video_writer = imageio.get_writer(output_video_path, fps=fps)
     for img in video_frames:
         video_writer.append_data(np.array(img))
     video_writer.close()
+
+
 def handle_memory_attention(enable_xformers_memory_efficient_attention, enable_torch_2_attn, unet):
     try:
         is_torch_2 = hasattr(F, 'scaled_dot_product_attention')
@@ -34,29 +38,42 @@ def handle_memory_attention(enable_xformers_memory_efficient_attention, enable_t
         if enable_xformers_memory_efficient_attention and not enable_torch_2:
             if is_xformers_available():
                 from xformers.ops import MemoryEfficientAttentionFlashAttentionOp
-                unet.enable_xformers_memory_efficient_attention(attention_op=MemoryEfficientAttentionFlashAttentionOp)
+                unet.enable_xformers_memory_efficient_attention(
+                    attention_op=MemoryEfficientAttentionFlashAttentionOp)
             else:
-                raise ValueError("xformers is not available. Make sure it is installed correctly")
+                raise ValueError(
+                    "xformers is not available. Make sure it is installed correctly")
 
         if enable_torch_2:
             set_torch_2_attn(unet)
 
     except:
         print("Could not enable memory efficient attention for xformers or Torch 2.0.")
+
+
 def load_primary_models(pretrained_model_path):
-    noise_scheduler = DDIMScheduler.from_pretrained(pretrained_model_path, subfolder="scheduler")
-    tokenizer = CLIPTokenizer.from_pretrained(pretrained_model_path, subfolder="tokenizer")
-    text_encoder = CLIPTextModel.from_pretrained(pretrained_model_path, subfolder="text_encoder")
+    noise_scheduler = DDIMScheduler.from_pretrained(
+        pretrained_model_path, subfolder="scheduler")
+    tokenizer = CLIPTokenizer.from_pretrained(
+        pretrained_model_path, subfolder="tokenizer")
+    text_encoder = CLIPTextModel.from_pretrained(
+        pretrained_model_path, subfolder="text_encoder")
     vae = AutoencoderKL.from_pretrained(pretrained_model_path, subfolder="vae")
-    unet = UNet3DConditionModel.from_pretrained(pretrained_model_path, subfolder="unet")
+    unet = UNet3DConditionModel.from_pretrained(
+        pretrained_model_path, subfolder="unet")
 
     return noise_scheduler, tokenizer, text_encoder, vae, unet
+
+
 def unet_and_text_g_c(unet, text_encoder, unet_enable, text_enable):
     unet._set_gradient_checkpointing(value=unet_enable)
-    text_encoder._set_gradient_checkpointing(CLIPEncoder, value=text_enable)
+    text_encoder._set_gradient_checkpointing(CLIPEncoder)
+
+
 def freeze_models(models_to_freeze):
     for model in models_to_freeze:
-        if model is not None: model.requires_grad_(False)
+        if model is not None:
+            model.requires_grad_(False)
 
 
 def initialize_pipeline(
@@ -71,7 +88,8 @@ def initialize_pipeline(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
 
-        scheduler, tokenizer, text_encoder, vae, unet = load_primary_models(model)
+        scheduler, tokenizer, text_encoder, vae, unet = load_primary_models(
+            model)
 
     # Freeze any necessary models
     freeze_models([vae, text_encoder, unet])
@@ -126,25 +144,30 @@ def prepare_input_latents(
     num_frames: int,
     height: int,
     width: int,
-    latents_path:str,
+    latents_path: str,
     noise_prior: float
 ):
     # initialize with random gaussian noise
     scale = pipe.vae_scale_factor
-    shape = (batch_size, pipe.unet.config.in_channels, num_frames, height // scale, width // scale)
+    shape = (batch_size, pipe.unet.config.in_channels,
+             num_frames, height // scale, width // scale)
     if noise_prior > 0.:
         cached_latents = torch.load(latents_path)
         if 'inversion_noise' not in cached_latents:
-            latents = inverse_video(pipe, cached_latents['latents'].unsqueeze(0), 50).squeeze(0)
+            latents = inverse_video(
+                pipe, cached_latents['latents'].unsqueeze(0), 50).squeeze(0)
         else:
             latents = torch.load(latents_path)['inversion_noise'].unsqueeze(0)
         if latents.shape[0] != batch_size:
             latents = latents.repeat(batch_size, 1, 1, 1, 1)
         if latents.shape != shape:
-            latents = interpolate(rearrange(latents, "b c f h w -> (b f) c h w", b=batch_size), (height // scale, width // scale), mode='bilinear')
-            latents = rearrange(latents, "(b f) c h w -> b c f h w", b=batch_size)
+            latents = interpolate(rearrange(latents, "b c f h w -> (b f) c h w",
+                                  b=batch_size), (height // scale, width // scale), mode='bilinear')
+            latents = rearrange(
+                latents, "(b f) c h w -> b c f h w", b=batch_size)
         noise = torch.randn_like(latents, dtype=torch.half)
-        latents = (noise_prior) ** 0.5 * latents + (1 - noise_prior) ** 0.5 * noise
+        latents = (noise_prior) ** 0.5 * latents + \
+            (1 - noise_prior) ** 0.5 * noise
     else:
         latents = torch.randn(shape, dtype=torch.half)
 
@@ -159,7 +182,8 @@ def encode(pipe: TextToVideoSDPipeline, pixels: Tensor, batch_size: int = 8):
     for idx in trange(
         0, pixels.shape[0], batch_size, desc="Encoding to latents...", unit_scale=batch_size, unit="frame"
     ):
-        pixels_batch = pixels[idx : idx + batch_size].to(pipe.device, dtype=torch.half)
+        pixels_batch = pixels[idx: idx +
+                              batch_size].to(pipe.device, dtype=torch.half)
         latents_batch = pipe.vae.encode(pixels_batch).latent_dist.sample()
         latents_batch = latents_batch.mul(pipe.vae.config.scaling_factor).cpu()
         latents.append(latents_batch)
@@ -187,7 +211,7 @@ def inference(
     lora_rank: int = 64,
     lora_scale: float = 1.0,
     seed: Optional[int] = None,
-    latents_path: str="",
+    latents_path: str = "",
     noise_prior: float = 0.,
     repeat_num: int = 1,
     ckpt_idx: int = 0,
@@ -203,14 +227,14 @@ def inference(
     label = label.replace('.', '')
     with torch.autocast(device, dtype=torch.half):
         # prepare models
-        pipe = initialize_pipeline(model, device, xformers, sdp, lora_path, lora_rank, lora_scale)
+        pipe = initialize_pipeline(
+            model, device, xformers, sdp, lora_path, lora_rank, lora_scale)
 
         for i in range(repeat_num):
             if seed is None:
                 random_seed = random.randint(100, 10000000)
                 torch.manual_seed(random_seed)
-                    
-                          
+
             # 采用共同的初始噪声
             # video_name = out_name.split('/')[3]
             # infer_class = out_name.split('/')[4]
@@ -240,20 +264,23 @@ def inference(
                     guidance_scale=guidance_scale,
                     latents=init_latents,
                     label=f"{out_name}_{random_seed}_{ckpt_idx}",
-                    freeu={'s1':freeu[0],"s2":freeu[1],"b1":freeu[2],"b2":freeu[3]},
+                    freeu={'s1': freeu[0], "s2": freeu[1],
+                           "b1": freeu[2], "b2": freeu[3]},
                     earlystep=earlystep,
                     infer=True,
                     # seed=seed,
                 ).frames
-            
+
             # =========================================
             # ========= write outputs to file =========
             # =========================================
             os.makedirs(args.output_dir, exist_ok=True)
 
             # save to mp4
-            export_to_video(video_frames, f"{out_name}_{random_seed}_{ckpt_idx}_{str(freeu)}.mp4", args.fps)
-            print(f'save to {out_name}_{random_seed}_{ckpt_idx}_{str(freeu)}.mp4')
+            export_to_video(
+                video_frames, f"{out_name}_{random_seed}_{ckpt_idx}_{str(freeu)}.mp4", args.fps)
+            print(
+                f'save to {out_name}_{random_seed}_{ckpt_idx}_{str(freeu)}.mp4')
             # # save to gif
             # file_name = f"{out_name}_{random_seed}.gif"
             # imageio.mimsave(file_name, video_frames, 'GIF', duration=1000 * 1 / args.fps, loop=0)
@@ -302,8 +329,9 @@ if __name__ == "__main__":
     # =========================================
     # args.output_dir = args.output_dir + f'/EarlyStep{args.earlystep}'
     out_name = f"{args.output_dir}/"
-    prompt = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_", args.prompt) if platform.system() == "Windows" else args.prompt
-    out_name += f"{prompt}".replace(' ','_').replace(',', '').replace('.', '')
+    prompt = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_",
+                    args.prompt) if platform.system() == "Windows" else args.prompt
+    out_name += f"{prompt}".replace(' ', '_').replace(',', '').replace('.', '')
 
     args.prompt = [prompt] * args.batch_size
     if args.negative_prompt is not None:
@@ -332,16 +360,13 @@ if __name__ == "__main__":
         sdp=args.sdp,
         lora_path=lora_path,
         lora_rank=args.lora_rank,
-        lora_scale = args.lora_scale,
+        lora_scale=args.lora_scale,
         seed=args.seed,
         latents_path=latents_path,
         noise_prior=args.noise_prior,
         repeat_num=args.repeat_num,
-        ckpt_idx = args.checkpoint_index,
-        motion_name = motion_name,
-        freeu = args.freeu,
-        earlystep = args.earlystep,
+        ckpt_idx=args.checkpoint_index,
+        motion_name=motion_name,
+        freeu=args.freeu,
+        earlystep=args.earlystep,
     )
-
-
-
