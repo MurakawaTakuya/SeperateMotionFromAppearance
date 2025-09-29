@@ -73,14 +73,22 @@ If you don't want to train a LoRA model, you can also use the checkpoint we prov
 | zoom-out | [Google Drive](https://drive.google.com/file/d/1V_N1wpKT-PdECwbSupdGV2rYS_oLG5qS/view?usp=drive_link) |
 | dolly | [Google Drive](https://drive.google.com/file/d/1WpH48b9jRHzDQXOY0jEU71z1Qwd47iwD/view?usp=drive_link) |
 
+If you can't use CUDA_HOME, uninstall deepspeed and try again.
+
+```bash
+pip uninstall -y deepspeed
+```
+
 ### Inference
 
 ```bash
-cd infer
-python3 infer.py --model your/foundation/model/path/ \
-    --prompt your/prompt/ \
-    --checkpoint_folder your/checkpoints/folder \
-    --checkpoint_index 1000 --seed xxx --output_dir outputs/infer/
+python3 infer/infer.py \
+  --model your/foundation/model/path/ \
+  --prompt your/prompt/ \
+  --checkpoint_folder your/checkpoints/folder \
+  --checkpoint_index 1000 \
+  --seed xxx \
+  --output_dir outputs/infer/
 ```
 
 ## Citation
