@@ -30,7 +30,6 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 pip install "huggingface-hub==0.25.2"
 pip install "tokenizers==0.15.2"
 pip install "transformers==4.36.2"
-pip install "diffusers==0.25.1"
 
 # Install other required packages
 pip install accelerate>=0.18.0
