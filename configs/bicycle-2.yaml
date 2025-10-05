@@ -2,7 +2,7 @@
 pretrained_model_path: "./models/zeroscope_v2_576w/"
 
 # The folder where your training outputs will be placed.
-output_dir: "./outputs/train/zoomin"
+output_dir: "./outputs/train/bicycle"
 
 # You can train multiple datasets at once. They will be joined together for training.
 # Simply remove the line you don't need, or keep them all for mixed training.
@@ -57,16 +57,17 @@ train_data:
   n_sample_frames: 16
 
   # 'single_video'
-  single_video_path: "./test_data/zoom_in/zoomin.mp4"
+  single_video_path: "./test_data/bicycle/stock-footage-woman-riding-bike-on-city-paved-road-woman-bicycle-rider-have-a-ride-in-the-morning-empty-city.mp4"
 
   # The prompt when using a single video file
-  single_video_prompt: "A cup in a lab captured with a zoom in."
+  fallback_prompt: "A person is riding a bicycle."
 
 # Validation data parameters.
 validation_data:
   # A custom prompt that is different from your training dataset.
   prompt:
-    - "A wolf standing on a snowy mountain captured with a zoom in."
+    - "A person is riding a bicycle past the Eiffel Tower."
+    - "A panda is riding a bicycle in a garden."
 
   # Whether or not to sample preview during training (Requires more VRAM).
   sample_preview: True
@@ -100,7 +101,10 @@ adam_weight_decay: 1e-2
 max_train_steps: 1000
 
 # Saves a model every nth step.
-checkpointing_steps: 200
+checkpointing_steps: 100
+
+# How many steps to do for validation if sample_preview is enabled.
+validation_steps: 100
 
 # Whether or not we want to use mixed precision with accelerate
 mixed_precision: "fp16"

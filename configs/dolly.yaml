@@ -57,7 +57,7 @@ train_data:
   n_sample_frames: 16
 
   # 'single_video'
-  single_video_path: "./test/dolly/dolly_zoom.mp4"
+  single_video_path: "./test_data/dolly/dolly_zoom.mp4"
 
   # The prompt when using a single video file
   single_video_prompt: "A cup in a lab captured with a dolly zoom."

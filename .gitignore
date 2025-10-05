@@ -3,3 +3,4 @@ __pycache__/
 zeroscope_v2_576w
 outputs/
 inference_results/
+test_data/
