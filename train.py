@@ -490,10 +490,10 @@ def save_pipe(
     ).to(torch_dtype=torch.float32)
 
     lora_manager_spatial.save_lora_weights(model=copy.deepcopy(
-        pipeline), save_path=save_path+'/spatial', step=global_step)
+        pipeline), save_path=save_path + '/spatial', step=global_step)
     if lora_manager_temporal is not None:
         lora_manager_temporal.save_lora_weights(model=copy.deepcopy(
-            pipeline), save_path=save_path+'/temporal', step=global_step)
+            pipeline), save_path=save_path + '/temporal', step=global_step)
 
     if save_pretrained_model:
         pipeline.save_pretrained(save_path)
@@ -1016,6 +1016,11 @@ def main(
 
                 if should_sample(global_step, validation_steps, validation_data):
                     if accelerator.is_main_process:
+                        # Set seed for validation if specified
+                        if hasattr(validation_data, 'seed') and validation_data.seed is not None:
+                            torch.manual_seed(validation_data.seed)
+                            logger.info(f"Using validation seed: {validation_data.seed}")
+
                         with accelerator.autocast():
                             unet.eval()
                             text_encoder.eval()
@@ -1027,7 +1032,7 @@ def main(
 
                             if validation_data.noise_prior > 0:
                                 preset_noise = (validation_data.noise_prior) ** 0.5 * batch['inversion_noise'] + (
-                                    1-validation_data.noise_prior) ** 0.5 * torch.randn_like(batch['inversion_noise'])
+                                    1 - validation_data.noise_prior) ** 0.5 * torch.randn_like(batch['inversion_noise'])
                             else:
                                 preset_noise = None
 
