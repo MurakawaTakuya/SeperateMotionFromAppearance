@@ -54,17 +54,17 @@ train_data:
   n_sample_frames: 16
 
   # 'multiple videos'
-  path: "./test_data/skateboarding/"
+  path: "./test_data/breakdance/"
 
   # The prompt when using a single video file
-  fallback_prompt: "A person is skateboarding."
+  fallback_prompt: "A person is breakdancing."
 
 # Validation data parameters.
 validation_data:
   # A custom prompt that is different from your training dataset.
   prompt:
-    - "A person is skateboarding past the Eiffel Tower."
-    - "A panda is skateboarding in a garden."
+    - "A person is breakdancing past the Eiffel Tower."
+    - "A panda is breakdancing in a garden."
 
   # Whether or not to sample preview during training (Requires more VRAM).
   sample_preview: True
@@ -102,7 +102,7 @@ learning_rate: 5e-4
 adam_weight_decay: 1e-4
 
 # Maximum number of train steps. Model is saved after training.
-max_train_steps: 1000
+max_train_steps: 2500
 
 # Saves a model every nth step.
 checkpointing_steps: 100
