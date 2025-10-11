@@ -23,6 +23,7 @@ import imageio
 import ast
 
 
+# TODO: trainにもあるので共通で使う
 def export_to_video(video_frames, output_video_path, fps):
     video_writer = imageio.get_writer(output_video_path, fps=fps)
     for img in video_frames:
@@ -288,12 +289,14 @@ def inference(
     return video_frames
 
 
+# REVIEW: main関数にする
 if __name__ == "__main__":
     import decord
 
     decord.bridge.set_bridge("torch")
 
     # fmt: off
+    # REVIEW: arg_parseで引数を受け取る
     parser = argparse.ArgumentParser()
     parser.add_argument("-m", "--model", type=str, required=True,
                         help="HuggingFace repository or path to model checkpoint directory")
