@@ -37,24 +37,25 @@ from .unet_3d_blocks import (
 
 import torch.fft as fft
 
+
 def Fourier_filter(x, threshold, scale):
     dtype = x.dtype
     x = x.type(torch.float32)
     # FFT
     x_freq = fft.fftn(x, dim=(-2, -1))
     x_freq = fft.fftshift(x_freq, dim=(-2, -1))
-    
-    B, C, H, W = x_freq.shape
-    mask = torch.ones((B, C, H, W)).cuda() 
 
-    crow, ccol = H // 2, W //2
+    B, C, H, W = x_freq.shape
+    mask = torch.ones((B, C, H, W)).cuda()
+
+    crow, ccol = H // 2, W // 2
     mask[..., crow - threshold:crow + threshold, ccol - threshold:ccol + threshold] = scale
     x_freq = x_freq * mask
 
     # IFFT
     x_freq = fft.ifftshift(x_freq, dim=(-2, -1))
     x_filtered = fft.ifftn(x_freq, dim=(-2, -1)).real
-    
+
     x_filtered = x_filtered.type(dtype)
     return x_filtered
 
@@ -356,7 +357,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
         down_block_additional_residuals: Optional[Tuple[torch.Tensor]] = None,
         mid_block_additional_residual: Optional[torch.Tensor] = None,
         return_dict: bool = True,
-        label:str = None,
+        label: str = None,
         seed: int = None,
         **my_kwargs,
     ) -> Union[UNet3DConditionOutput, Tuple]:
@@ -425,21 +426,21 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
         emb = emb.repeat_interleave(repeats=num_frames, dim=0)
         encoder_hidden_states = encoder_hidden_states.repeat_interleave(repeats=num_frames, dim=0)
         # 2. pre-processx
-        sample = sample.permute(0, 2, 1, 3, 4).reshape((sample.shape[0] * num_frames, -1) + sample.shape[3:])   #[32,4,48,48]
-        sample = self.conv_in(sample)   #[32,320,48,48]
-        
+        sample = sample.permute(0, 2, 1, 3, 4).reshape((sample.shape[0] * num_frames, -1) + sample.shape[3:])  # [32,4,48,48]
+        sample = self.conv_in(sample)  # [32,320,48,48]
+
         if num_frames > 1:
             if self.gradient_checkpointing:
                 sample = transformer_g_c(self.transformer_in, sample, num_frames)
             else:
-                sample = self.transformer_in(sample, num_frames=num_frames).sample  #[32,320,48,48]
+                sample = self.transformer_in(sample, num_frames=num_frames).sample  # [32,320,48,48]
         # 3. down
         down_block_res_samples = (sample,)
         # my_down_block_res_samples = (sample,)
         my_down_block_res_samples = tuple()
         for i, downsample_block in enumerate(self.down_blocks):
             if hasattr(downsample_block, "has_cross_attention") and downsample_block.has_cross_attention:
-                sample, res_samples,my_res_samples = downsample_block(
+                sample, res_samples, my_res_samples = downsample_block(
                     hidden_states=sample,
                     temb=emb,
                     encoder_hidden_states=encoder_hidden_states,
@@ -451,16 +452,16 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
                     seed=seed,
                 )
             else:
-                sample, res_samples,my_res_samples = downsample_block(hidden_states=sample, temb=emb, num_frames=num_frames,t=timestep,label=label,seed=seed,)
+                sample, res_samples, my_res_samples = downsample_block(hidden_states=sample, temb=emb, num_frames=num_frames, t=timestep, label=label, seed=seed,)
 
             down_block_res_samples += res_samples
 
             # if i == 0 :
             #     my_down_block_res_samples += my_res_samples
-            if i == 1 :
+            if i == 1:
                 my_down_block_res_samples += (my_res_samples[-1],)
                 # import pdb;pdb.set_trace()
-            if i == 2 :
+            if i == 2:
                 my_down_block_res_samples += my_res_samples[:-1]
                 # import pdb;pdb.set_trace()
 
@@ -493,12 +494,12 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
         for i, upsample_block in enumerate(self.up_blocks):
             is_final_block = i == len(self.up_blocks) - 1
 
-            res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
+            res_samples = down_block_res_samples[-len(upsample_block.resnets):]
             down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
 
             # import pdb;pdb.set_trace()
             if i == 1:
-                my_res_samples = my_down_block_res_samples[-len(upsample_block.resnets) :]
+                my_res_samples = my_down_block_res_samples[-len(upsample_block.resnets):]
                 my_down_block_res_samples = my_down_block_res_samples[: -len(upsample_block.resnets)]
             else:
                 my_res_samples = res_samples

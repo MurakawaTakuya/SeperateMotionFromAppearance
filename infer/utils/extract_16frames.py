@@ -32,5 +32,3 @@ if __name__ == "__main__":
     selected_frames = 16
 
     extract_frames(input_video_path, output_video_path, target_fps, selected_frames)
-
-

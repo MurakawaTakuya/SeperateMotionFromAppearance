@@ -769,7 +769,7 @@ def save_lora_weight(
     else:
         weights_new = []
         for i in range(0, len(weights), 4):
-            subset = weights[i+(flag-1)*2:i+(flag-1)*2+2]
+            subset = weights[i + (flag - 1) * 2:i + (flag - 1) * 2 + 2]
             weights_new.extend(subset)
         torch.save(weights_new, path)
 

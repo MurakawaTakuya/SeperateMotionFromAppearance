@@ -319,8 +319,8 @@ if __name__ == "__main__":
                         help="The index of checkpoint, such as 300.")
     parser.add_argument("-rn", "--repeat_num", type=int, default=1,
                         help="How many results to generate with the same prompt.")
-    parser.add_argument("--freeu",type = str,default='[1.1,1.,1,1]')
-    parser.add_argument("--earlystep",type = int,default = 333)
+    parser.add_argument("--freeu", type=str, default='[1.1,1.,1,1]')
+    parser.add_argument("--earlystep", type=int, default=333)
     args = parser.parse_args()
     # fmt: on
 

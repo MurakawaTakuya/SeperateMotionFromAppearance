@@ -13,7 +13,7 @@ from safetensors.torch import load_file, save_file
 # UNet Conversion #
 # =================#
 
-print ('Initializing the conversion map')
+print('Initializing the conversion map')
 
 unet_conversion_map = [
     # (ModelScope, HF Diffusers)
@@ -49,7 +49,7 @@ unet_conversion_map_resnet = [
     ("skip_connection", "conv_shortcut"),
 
     # MS
-    #("temopral_conv", "temp_convs"), # ROFL, they have a typo here --kabachuha
+    # ("temopral_conv", "temp_convs"), # ROFL, they have a typo here --kabachuha
 ]
 
 unet_conversion_map_layer = []
@@ -88,24 +88,24 @@ for i in range(4):
 
         # Spacial SD stuff
         hf_down_res_prefix = f"down_blocks.{i}.resnets.{j}."
-        sd_down_res_prefix = f"input_blocks.{3*i + j + 1}.0."
+        sd_down_res_prefix = f"input_blocks.{3 * i + j + 1}.0."
         unet_conversion_map_layer.append((sd_down_res_prefix, hf_down_res_prefix))
 
         if i < 3:
             # no attention layers in down_blocks.3
             hf_down_atn_prefix = f"down_blocks.{i}.attentions.{j}."
-            sd_down_atn_prefix = f"input_blocks.{3*i + j + 1}.1."
+            sd_down_atn_prefix = f"input_blocks.{3 * i + j + 1}.1."
             unet_conversion_map_layer.append((sd_down_atn_prefix, hf_down_atn_prefix))
-        
+
         # Temporal MS stuff
         hf_down_res_prefix = f"down_blocks.{i}.temp_convs.{j}."
-        sd_down_res_prefix = f"input_blocks.{3*i + j + 1}.0.temopral_conv."
+        sd_down_res_prefix = f"input_blocks.{3 * i + j + 1}.0.temopral_conv."
         unet_conversion_map_layer.append((sd_down_res_prefix, hf_down_res_prefix))
 
         if i < 3:
             # no attention layers in down_blocks.3
             hf_down_atn_prefix = f"down_blocks.{i}.temp_attentions.{j}."
-            sd_down_atn_prefix = f"input_blocks.{3*i + j + 1}.2."
+            sd_down_atn_prefix = f"input_blocks.{3 * i + j + 1}.2."
             unet_conversion_map_layer.append((sd_down_atn_prefix, hf_down_atn_prefix))
 
     for j in range(3):
@@ -113,36 +113,36 @@ for i in range(4):
 
         # Spacial SD stuff
         hf_up_res_prefix = f"up_blocks.{i}.resnets.{j}."
-        sd_up_res_prefix = f"output_blocks.{3*i + j}.0."
+        sd_up_res_prefix = f"output_blocks.{3 * i + j}.0."
         unet_conversion_map_layer.append((sd_up_res_prefix, hf_up_res_prefix))
 
         if i > 0:
             # no attention layers in up_blocks.0
             hf_up_atn_prefix = f"up_blocks.{i}.attentions.{j}."
-            sd_up_atn_prefix = f"output_blocks.{3*i + j}.1."
+            sd_up_atn_prefix = f"output_blocks.{3 * i + j}.1."
             unet_conversion_map_layer.append((sd_up_atn_prefix, hf_up_atn_prefix))
-        
+
         # loop over resnets/attentions for upblocks
         hf_up_res_prefix = f"up_blocks.{i}.temp_convs.{j}."
-        sd_up_res_prefix = f"output_blocks.{3*i + j}.0.temopral_conv."
+        sd_up_res_prefix = f"output_blocks.{3 * i + j}.0.temopral_conv."
         unet_conversion_map_layer.append((sd_up_res_prefix, hf_up_res_prefix))
 
         if i > 0:
             # no attention layers in up_blocks.0
             hf_up_atn_prefix = f"up_blocks.{i}.temp_attentions.{j}."
-            sd_up_atn_prefix = f"output_blocks.{3*i + j}.2."
+            sd_up_atn_prefix = f"output_blocks.{3 * i + j}.2."
             unet_conversion_map_layer.append((sd_up_atn_prefix, hf_up_atn_prefix))
 
     # Up/Downsamplers are 2D, so don't need to touch them
     if i < 3:
         # no downsample in down_blocks.3
         hf_downsample_prefix = f"down_blocks.{i}.downsamplers.0.conv."
-        sd_downsample_prefix = f"input_blocks.{3*(i+1)}.op."
+        sd_downsample_prefix = f"input_blocks.{3 * (i + 1)}.op."
         unet_conversion_map_layer.append((sd_downsample_prefix, hf_downsample_prefix))
 
         # no upsample in up_blocks.3
         hf_upsample_prefix = f"up_blocks.{i}.upsamplers.0."
-        sd_upsample_prefix = f"output_blocks.{3*i + 2}.{1 if i == 0 else 3}."
+        sd_upsample_prefix = f"output_blocks.{3 * i + 2}.{1 if i == 0 else 3}."
         unet_conversion_map_layer.append((sd_upsample_prefix, hf_upsample_prefix))
 
 
@@ -155,7 +155,7 @@ unet_conversion_map_layer.append((sd_mid_atn_prefix, hf_mid_atn_prefix))
 
 for j in range(2):
     hf_mid_res_prefix = f"mid_block.resnets.{j}."
-    sd_mid_res_prefix = f"middle_block.{3*j}."
+    sd_mid_res_prefix = f"middle_block.{3 * j}."
     unet_conversion_map_layer.append((sd_mid_res_prefix, hf_mid_res_prefix))
 
 # Temporal
@@ -165,12 +165,14 @@ unet_conversion_map_layer.append((sd_mid_atn_prefix, hf_mid_atn_prefix))
 
 for j in range(2):
     hf_mid_res_prefix = f"mid_block.temp_convs.{j}."
-    sd_mid_res_prefix = f"middle_block.{3*j}.temopral_conv."
+    sd_mid_res_prefix = f"middle_block.{3 * j}.temopral_conv."
     unet_conversion_map_layer.append((sd_mid_res_prefix, hf_mid_res_prefix))
 
 # The pipeline
+
+
 def convert_unet_state_dict(unet_state_dict, strict_mapping=False):
-    print ('Converting the UNET')
+    print('Converting the UNET')
     # buyer beware: this is a *brittle* function,
     # and correct output requires that all of these pieces interact in
     # the exact order in which I have arranged them.
@@ -195,11 +197,10 @@ def convert_unet_state_dict(unet_state_dict, strict_mapping=False):
         for sd_part, hf_part in unet_conversion_map_layer:
             v = v.replace(hf_part, sd_part)
         mapping[k] = v
-    
 
     # there must be a pattern, but I don't want to bother atm
     do_not_unsqueeze = [f'output_blocks.{i}.1.proj_out.weight' for i in range(3, 12)] + [f'output_blocks.{i}.1.proj_in.weight' for i in range(3, 12)] + ['middle_block.1.proj_in.weight', 'middle_block.1.proj_out.weight'] + [f'input_blocks.{i}.1.proj_out.weight' for i in [1, 2, 4, 5, 7, 8]] + [f'input_blocks.{i}.1.proj_in.weight' for i in [1, 2, 4, 5, 7, 8]]
-    print (do_not_unsqueeze)
+    print(do_not_unsqueeze)
 
     new_state_dict = {v: (unet_state_dict[k].unsqueeze(-1) if ('proj_' in k and ('bias' not in k) and (k not in do_not_unsqueeze)) else unet_state_dict[k]) for k, v in mapping.items()}
     # HACK: idk why the hell it does not work with list comprehension
@@ -248,7 +249,7 @@ code2idx = {"q": 0, "k": 1, "v": 2}
 
 
 def convert_text_enc_state_dict_v20(text_enc_dict):
-    #print ('Converting the text encoder')
+    # print ('Converting the text encoder')
     new_state_dict = {}
     capture_qkv_weight = {}
     capture_qkv_bias = {}
@@ -297,6 +298,7 @@ def convert_text_enc_state_dict_v20(text_enc_dict):
 
 def convert_text_enc_state_dict(text_enc_dict):
     return text_enc_dict
+
 
 textenc_conversion_lst = [
     # (stable-diffusion, HF Diffusers)
@@ -367,6 +369,7 @@ def convert_text_enc_state_dict_v20(text_enc_dict):
 def convert_text_enc_state_dict(text_enc_dict):
     return text_enc_dict
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
@@ -388,7 +391,7 @@ if __name__ == "__main__":
 
     # Path for safetensors
     unet_path = osp.join(args.model_path, "unet", "diffusion_pytorch_model.safetensors")
-    #vae_path = osp.join(args.model_path, "vae", "diffusion_pytorch_model.safetensors")
+    # vae_path = osp.join(args.model_path, "vae", "diffusion_pytorch_model.safetensors")
     text_enc_path = osp.join(args.model_path, "text_encoder", "model.safetensors")
 
     # Load models from safetensors if it exists, if it doesn't pytorch
@@ -412,7 +415,7 @@ if __name__ == "__main__":
 
     # Convert the UNet model
     unet_state_dict = convert_unet_state_dict(unet_state_dict)
-    #unet_state_dict = {"model.diffusion_model." + k: v for k, v in unet_state_dict.items()}
+    # unet_state_dict = {"model.diffusion_model." + k: v for k, v in unet_state_dict.items()}
 
     # Convert the VAE model
     # vae_state_dict = convert_vae_state_dict(vae_state_dict)
@@ -428,16 +431,16 @@ if __name__ == "__main__":
         # Need to add the tag 'transformer' in advance so we can knock it out from the final layer-norm
         text_enc_dict = {"transformer." + k: v for k, v in text_enc_dict.items()}
         text_enc_dict = convert_text_enc_state_dict_v20(text_enc_dict)
-        #text_enc_dict = {"cond_stage_model.model." + k: v for k, v in text_enc_dict.items()}
+        # text_enc_dict = {"cond_stage_model.model." + k: v for k, v in text_enc_dict.items()}
     else:
         text_enc_dict = convert_text_enc_state_dict(text_enc_dict)
-        #text_enc_dict = {"cond_stage_model.transformer." + k: v for k, v in text_enc_dict.items()}
+        # text_enc_dict = {"cond_stage_model.transformer." + k: v for k, v in text_enc_dict.items()}
 
     # DON'T PUT TOGETHER FOR THE NEW CHECKPOINT AS MODELSCOPE USES THEM IN THE SPLITTED FORM --kabachuha
     # Save CLIP and the Diffusion model to their own files
 
-    #state_dict = {**unet_state_dict, **vae_state_dict, **text_enc_dict}
-    print ('Saving UNET')
+    # state_dict = {**unet_state_dict, **vae_state_dict, **text_enc_dict}
+    print('Saving UNET')
     state_dict = {**unet_state_dict}
 
     if args.half:
@@ -446,7 +449,7 @@ if __name__ == "__main__":
     if args.use_safetensors:
         save_file(state_dict, args.checkpoint_path)
     else:
-        #state_dict = {"state_dict": state_dict}
+        # state_dict = {"state_dict": state_dict}
         torch.save(state_dict, args.checkpoint_path)
 
     # TODO: CLIP conversion doesn't work atm
@@ -461,5 +464,5 @@ if __name__ == "__main__":
     # else:
     #     #state_dict = {"state_dict": state_dict}
     #     torch.save(state_dict, args.clip_checkpoint_path)
-    
+
     print('Operation successfull')

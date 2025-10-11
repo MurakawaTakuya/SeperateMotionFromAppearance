@@ -37,9 +37,9 @@ class LoraInjectedLinear(nn.Module):
         super().__init__()
 
         if r > min(in_features, out_features):
-            #raise ValueError(
+            # raise ValueError(
             #    f"LoRA rank {r} must be less or equal than {min(in_features, out_features)}"
-            #)
+            # )
             print(f"LoRA rank {r} is too large. setting to: {min(in_features, out_features)}")
             r = min(in_features, out_features)
 
@@ -81,9 +81,9 @@ class MultiLoraInjectedLinear(nn.Module):
         super().__init__()
 
         if r > min(in_features, out_features):
-            #raise ValueError(
+            # raise ValueError(
             #    f"LoRA rank {r} must be less or equal than {min(in_features, out_features)}"
-            #)
+            # )
             print(f"LoRA rank {r} is too large. setting to: {min(in_features, out_features)}")
             r = min(in_features, out_features)
 
@@ -91,16 +91,16 @@ class MultiLoraInjectedLinear(nn.Module):
         self.linear = nn.Linear(in_features, out_features, bias)
 
         for i in range(lora_num):
-            if i==0:
-                self.lora_down =[nn.Linear(in_features, r, bias=False)]
+            if i == 0:
+                self.lora_down = [nn.Linear(in_features, r, bias=False)]
                 self.dropout = [nn.Dropout(dropout_p)]
                 self.lora_up = [nn.Linear(r, out_features, bias=False)]
                 self.scale = scales[i]
                 self.selector = [nn.Identity()]
             else:
                 self.lora_down.append(nn.Linear(in_features, r, bias=False))
-                self.dropout.append( nn.Dropout(dropout_p))
-                self.lora_up.append( nn.Linear(r, out_features, bias=False))
+                self.dropout.append(nn.Dropout(dropout_p))
+                self.lora_up.append(nn.Linear(r, out_features, bias=False))
                 self.scale.append(scales[i])
 
         nn.init.normal_(self.lora_down.weight, std=1 / r)
@@ -211,6 +211,7 @@ class LoraInjectedConv2d(nn.Module):
             self.lora_up.weight.device
         ).to(self.lora_up.weight.dtype)
 
+
 class LoraInjectedConv3d(nn.Module):
     def __init__(
         self,
@@ -288,6 +289,7 @@ class LoraInjectedConv3d(nn.Module):
             self.lora_up.weight.device
         ).to(self.lora_up.weight.dtype)
 
+
 UNET_DEFAULT_TARGET_REPLACE = {"CrossAttention", "Attention", "GEGLU"}
 
 UNET_EXTENDED_TARGET_REPLACE = {"ResnetBlock2D", "CrossAttention", "Attention", "GEGLU"}
@@ -342,7 +344,7 @@ def _find_modules_v2(
         ancestors = (
             module
             for name, module in model.named_modules()
-            if module.__class__.__name__ in ancestor_class # and ('transformer_in' not in name)
+            if module.__class__.__name__ in ancestor_class  # and ('transformer_in' not in name)
         )
     else:
         # this, incase you want to naively iterate over all modules.
@@ -375,7 +377,6 @@ def _find_modules_v2(
                 yield parent, name, module
 
 
-
 def _find_modules_v3(
     model,
     ancestor_class: Optional[Set[str]] = None,
@@ -401,7 +402,7 @@ def _find_modules_v3(
         ancestors = (
             module
             for name, module in model.named_modules()
-            if module.__class__.__name__ in ancestor_class # and ('transformer_in' not in name)
+            if module.__class__.__name__ in ancestor_class  # and ('transformer_in' not in name)
         )
     else:
         # this, incase you want to naively iterate over all modules.
@@ -432,10 +433,6 @@ def _find_modules_v3(
                     continue
                 # Otherwise, yield it
                 yield parent, name, module
-
-
-
-
 
 
 def _find_modules_old(
@@ -592,7 +589,7 @@ def inject_trainable_lora_extended(
                     if bias is not None:
                         _tmp.conv.bias = bias
                 # switch the module
-           
+
                 _tmp.to(_child_module.weight.device).to(_child_module.weight.dtype)
                 if bias is not None:
                     _tmp.to(_child_module.bias.device).to(_child_module.bias.dtype)
@@ -685,13 +682,13 @@ def inject_trainable_lora_extended(
 
 
 def inject_inferable_lora(
-        model, 
-        lora_path='', 
-        unet_replace_modules=["UNet3DConditionModel"], 
-        text_encoder_replace_modules=["CLIPEncoderLayer"],
-        is_extended=False, 
-        r=16
-    ):    
+    model,
+    lora_path='',
+    unet_replace_modules=["UNet3DConditionModel"],
+    text_encoder_replace_modules=["CLIPEncoderLayer"],
+    is_extended=False,
+    r=16
+):
     from transformers.models.clip import CLIPTextModel
     from diffusers import UNet3DConditionModel
 
@@ -730,6 +727,7 @@ def inject_inferable_lora(
             print(e)
             print("Couldn't inject LoRA's due to an error.")
 
+
 def extract_lora_ups_down(model, target_replace_module=DEFAULT_TARGET_REPLACE):
 
     loras = []
@@ -741,7 +739,7 @@ def extract_lora_ups_down(model, target_replace_module=DEFAULT_TARGET_REPLACE):
             [target_replace_module_i],
             search_class=[LoraInjectedLinear, LoraInjectedConv2d, LoraInjectedConv3d],
         ):
-         
+
             loras.append((_child_module.lora_up, _child_module.lora_down))
 
     if len(loras) == 0:
@@ -764,6 +762,7 @@ def extract_lora_child_module(model, target_replace_module=DEFAULT_TARGET_REPLAC
             loras.append(_child_module)
 
     return loras
+
 
 def extract_lora_as_tensor(
     model, target_replace_module=DEFAULT_TARGET_REPLACE, as_fp16=True
@@ -794,7 +793,7 @@ def save_lora_weight(
     path="./lora.pt",
     target_replace_module=DEFAULT_TARGET_REPLACE,
     flag=None
-):  
+):
     weights = []
     for _up, _down in extract_lora_ups_down(
         model, target_replace_module=target_replace_module
@@ -804,11 +803,12 @@ def save_lora_weight(
     if not flag:
         torch.save(weights, path)
     else:
-        weights_new=[]
+        weights_new = []
         for i in range(0, len(weights), 4):
-            subset = weights[i+(flag-1)*2:i+(flag-1)*2+2]
+            subset = weights[i + (flag - 1) * 2:i + (flag - 1) * 2 + 2]
             weights_new.extend(subset)
         torch.save(weights_new, path)
+
 
 def save_lora_as_json(model, path="./lora.json"):
     weights = []
@@ -927,7 +927,7 @@ def parse_safeloras(
     loras = {}
     metadata = safeloras.metadata()
 
-    get_name = lambda k: k.split(":")[0]
+    def get_name(k): return k.split(":")[0]
 
     keys = list(safeloras.keys())
     keys.sort(key=get_name)
@@ -1097,11 +1097,11 @@ def monkeypatch_or_replace_lora_extended(
         model,
         target_replace_module,
         search_class=[
-            nn.Linear, 
-            nn.Conv2d, 
+            nn.Linear,
+            nn.Conv2d,
             nn.Conv3d,
-            LoraInjectedLinear, 
-            LoraInjectedConv2d, 
+            LoraInjectedLinear,
+            LoraInjectedConv2d,
             LoraInjectedConv3d,
         ],
     ):
@@ -1161,7 +1161,7 @@ def monkeypatch_or_replace_lora_extended(
             if bias is not None:
                 _tmp.conv.bias = bias
 
-        elif _child_module.__class__ == nn.Conv3d or(
+        elif _child_module.__class__ == nn.Conv3d or (
             _child_module.__class__ == LoraInjectedConv3d
         ):
 
@@ -1254,19 +1254,19 @@ def monkeypatch_remove_lora(model):
                 _tmp.weight = weight
                 if bias is not None:
                     _tmp.bias = bias
-            
+
             if isinstance(_source, nn.Conv3d):
                 _tmp = nn.Conv3d(
-                _source.in_channels,
-                _source.out_channels,
-                bias=_source.bias is not None,
-                kernel_size=_source.kernel_size,
-                padding=_source.padding,
-            )
+                    _source.in_channels,
+                    _source.out_channels,
+                    bias=_source.bias is not None,
+                    kernel_size=_source.kernel_size,
+                    padding=_source.padding,
+                )
 
             _tmp.weight = weight
             if bias is not None:
-                _tmp.bias = bias   
+                _tmp.bias = bias
 
         _module._modules[name] = _tmp
 
@@ -1457,6 +1457,7 @@ def train_patch_pipe(pipe, patch_unet, patch_text):
 
         collapse_lora(pipe.text_encoder)
         monkeypatch_remove_lora(pipe.text_encoder)
+
 
 @torch.no_grad()
 def inspect_lora(model):
