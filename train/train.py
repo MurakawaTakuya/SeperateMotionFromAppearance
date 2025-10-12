@@ -17,11 +17,9 @@ from tqdm.auto import tqdm
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from diffusers import DDIMScheduler, TextToVideoSDPipeline
-from diffusers.optimization import get_scheduler
 
 # First-party imports
 from utils.lora import extract_lora_child_module
-from utils.lora_handler import LoraHandler
 
 # Local imports
 from .utils.logging_utils import (
@@ -31,10 +29,6 @@ from .utils.validation_utils import (
     should_sample, export_to_video, save_pipe
 )
 from .utils.dataset_utils import get_train_dataset, extend_datasets
-from .utils.optimization_utils import (
-    create_optimizer_params, get_optimizer
-)
-from .utils.lora_utils import param_optim
 from .utils.training_utils import (
     handle_trainable_modules, handle_cache_latents
 )
@@ -43,6 +37,7 @@ from .utils.model_utils import (
     handle_memory_attention, tensor_to_vae_latent, sample_noise,
     enforce_zero_terminal_snr, is_mixed_precision, cast_to_gpu_and_type
 )
+from .model.lora_setup import setup_lora_components
 # Add parent directory to path for imports
 parent_dir = os.path.dirname(os.path.dirname(__file__))
 if parent_dir not in sys.path:
@@ -105,6 +100,8 @@ def main(
 ):
     *_, config = inspect.getargvalues(inspect.currentframe())
     # breakpoint()
+
+    # TODO: ここからモデルクラスのinitに入れる
     accelerator = Accelerator(
         gradient_accumulation_steps=gradient_accumulation_steps,
         mixed_precision=mixed_precision,
@@ -132,9 +129,6 @@ def main(
     # Enable xformers if available
     handle_memory_attention(
         enable_xformers_memory_efficient_attention, enable_torch_2_attn, unet)
-
-    # Initialize the optimizer
-    optimizer_cls = get_optimizer(use_8bit_adam)
 
     # Get the training dataset based on types (json, single_video, image)
     train_datasets = get_train_dataset(dataset_types, train_data, tokenizer)
@@ -166,83 +160,32 @@ def main(
     extra_unet_params = extra_unet_params if extra_unet_params is not None else {}
     extra_text_encoder_params = extra_unet_params if extra_unet_params is not None else {}
 
-    # Temporal LoRA
-    if train_temporal_lora:
-        # one temporal lora
-        lora_manager_temporal = LoraHandler(
-            use_unet_lora=use_unet_lora, unet_replace_modules=["TransformerTemporalModel"])
-
-        unet_lora_params_temporal, unet_negation_temporal = lora_manager_temporal.add_lora_to_model(
-            use_unet_lora, unet, lora_manager_temporal.unet_replace_modules, lora_unet_dropout,
-            lora_path + '/temporal/lora/', r=lora_rank)
-
-        optimizer_temporal = optimizer_cls(
-            create_optimizer_params([param_optim(unet_lora_params_temporal, use_unet_lora, is_lora=True,
-                                                 extra_params={
-                                                     **{"lr": learning_rate}, **extra_text_encoder_params}
-                                                 )], learning_rate),
-            lr=learning_rate,
-            betas=(adam_beta1, adam_beta2),
-            weight_decay=adam_weight_decay,
-            eps=adam_epsilon,
-        )
-
-        lr_scheduler_temporal = get_scheduler(
-            lr_scheduler,
-            optimizer=optimizer_temporal,
-            num_warmup_steps=lr_warmup_steps * gradient_accumulation_steps,
-            num_training_steps=max_train_steps * gradient_accumulation_steps,
-        )
-    else:
-        lora_manager_temporal = None
-        unet_lora_params_temporal, unet_negation_temporal = [], []
-        optimizer_temporal = None
-        lr_scheduler_temporal = None
-
-    # Spatial LoRAs
-    if single_spatial_lora:
-        spatial_lora_num = 1
-    else:
-        # one spatial lora for each video
-        spatial_lora_num = train_dataset.__len__()
-
-    lora_managers_spatial = []
-    unet_lora_params_spatial_list = []
-    optimizer_spatial_list = []
-    lr_scheduler_spatial_list = []
-    for i in range(spatial_lora_num):
-        lora_manager_spatial = LoraHandler(
-            use_unet_lora=use_unet_lora, unet_replace_modules=["Transformer2DModel"])
-        lora_managers_spatial.append(lora_manager_spatial)
-        unet_lora_params_spatial, unet_negation_spatial = lora_manager_spatial.add_lora_to_model(
-            use_unet_lora, unet, lora_manager_spatial.unet_replace_modules, lora_unet_dropout,
-            lora_path + '/spatial/lora/', r=lora_rank)
-
-        unet_lora_params_spatial_list.append(unet_lora_params_spatial)
-
-        optimizer_spatial = optimizer_cls(
-            create_optimizer_params([param_optim(unet_lora_params_spatial, use_unet_lora, is_lora=True,
-                                                 extra_params={
-                                                     **{"lr": learning_rate}, **extra_text_encoder_params}
-                                                 )], learning_rate),
-            lr=learning_rate,
-            betas=(adam_beta1, adam_beta2),
-            weight_decay=adam_weight_decay,
-            eps=adam_epsilon,
-        )
-
-        optimizer_spatial_list.append(optimizer_spatial)
-
-        # Scheduler
-        lr_scheduler_spatial = get_scheduler(
-            lr_scheduler,
-            optimizer=optimizer_spatial,
-            num_warmup_steps=lr_warmup_steps * gradient_accumulation_steps,
-            num_training_steps=max_train_steps * gradient_accumulation_steps,
-        )
-        lr_scheduler_spatial_list.append(lr_scheduler_spatial)
-
-        unet_negation_all = unet_negation_spatial + unet_negation_temporal
+    # Setup LoRA components
+    (lora_manager_temporal, unet_lora_params_temporal, unet_negation_temporal,
+     optimizer_temporal, lr_scheduler_temporal,
+     lora_managers_spatial, unet_lora_params_spatial_list,
+     optimizer_spatial_list, lr_scheduler_spatial_list,
+     unet_negation_all, spatial_lora_num) = setup_lora_components(
+        unet=unet,
+        train_temporal_lora=train_temporal_lora,
+        single_spatial_lora=single_spatial_lora,
+        train_dataset=train_dataset,
+        use_unet_lora=use_unet_lora,
+        lora_unet_dropout=lora_unet_dropout,
+        lora_path=lora_path,
+        lora_rank=lora_rank,
+        learning_rate=learning_rate,
+        extra_unet_params=extra_text_encoder_params,
+        adam_beta1=adam_beta1,
+        adam_beta2=adam_beta2,
+        adam_weight_decay=adam_weight_decay,
+        adam_epsilon=adam_epsilon,
+        lr_scheduler=lr_scheduler,
+        lr_warmup_steps=lr_warmup_steps,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+        max_train_steps=max_train_steps,
+        use_8bit_adam=use_8bit_adam
+    )
 
     # DataLoaders creation:
     train_dataloader = torch.utils.data.DataLoader(
@@ -337,7 +280,6 @@ def main(
 
         # Unfreeze UNET Layers
         if global_step == 0:
-            already_printed_trainables = False
             unet.train()
             handle_trainable_modules(
                 unet,
@@ -547,7 +489,7 @@ def main(
                         text_encoder,
                         vae,
                         output_dir,
-                        lora_manager_spatial,
+                        lora_managers_spatial[0] if lora_managers_spatial else None,
                         lora_manager_temporal,
                         unet_lora_modules,
                         text_encoder_lora_modules,
@@ -637,7 +579,7 @@ def main(
             text_encoder,
             vae,
             output_dir,
-            lora_manager_spatial,
+            lora_managers_spatial[0] if lora_managers_spatial else None,
             lora_manager_temporal,
             unet_lora_modules,
             text_encoder_lora_modules,
