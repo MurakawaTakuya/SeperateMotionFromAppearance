@@ -11,8 +11,6 @@ import sys
 from typing import Dict, Optional, Tuple
 from omegaconf import OmegaConf
 import torch
-import torch.nn.functional as F
-from torchvision import transforms
 from tqdm.auto import tqdm
 from accelerate import Accelerator
 from accelerate.logging import get_logger
@@ -30,14 +28,15 @@ from .utils.validation_utils import (
 )
 from .utils.dataset_utils import get_train_dataset, extend_datasets
 from .utils.training_utils import (
-    handle_trainable_modules, handle_cache_latents
+    handle_cache_latents
 )
 from .utils.model_utils import (
     load_primary_models, freeze_models, unet_and_text_g_c,
-    handle_memory_attention, tensor_to_vae_latent, sample_noise,
+    handle_memory_attention,
     enforce_zero_terminal_snr, is_mixed_precision, cast_to_gpu_and_type
 )
 from .model.lora_setup import setup_lora_components
+from .model.lora_training import train_lora_unet
 # Add parent directory to path for imports
 parent_dir = os.path.dirname(os.path.dirname(__file__))
 if parent_dir not in sys.path:
@@ -109,32 +108,32 @@ def main(
         project_dir=output_dir
     )
 
-    # Make one log on every process with the configuration for debugging.
+    # デバッグ用に各プロセスで設定をログ出力
     create_logging(logging, logger, accelerator)
 
-    # Initialize accelerate, transformers, and diffusers warnings
+    # accelerate、transformers、diffusersの警告を初期化
     accelerate_set_verbose(accelerator)
 
-    # Handle the output folder creation
+    # 出力フォルダの作成を処理
     if accelerator.is_main_process:
         output_dir = create_output_folders(output_dir, config)
 
-    # Load scheduler, tokenizer and models.
+    # スケジューラー、トークナイザー、モデルを読み込み
     noise_scheduler, tokenizer, text_encoder, vae, unet = load_primary_models(
         pretrained_model_path)
 
-    # Freeze any necessary models
+    # 必要なモデルを凍結
     freeze_models([vae, text_encoder, unet])
 
-    # Enable xformers if available
+    # 利用可能な場合はxformersを有効化
     handle_memory_attention(
         enable_xformers_memory_efficient_attention, enable_torch_2_attn, unet)
 
-    # Get the training dataset based on types (json, single_video, image)
+    # タイプに基づいてトレーニングデータセットを取得（json、single_video、image）
     train_datasets = get_train_dataset(dataset_types, train_data, tokenizer)
 
-    # If you have extra train data, you can add a list of however many you would like.
-    # Eg: extra_train_data: [{: {dataset_types, train_data: {etc...}}}]
+    # 追加のトレーニングデータがある場合、任意の数だけリストに追加可能
+    # 例: extra_train_data: [{: {dataset_types, train_data: {etc...}}}]
     try:
         if extra_train_data is not None and len(extra_train_data) > 0:
             for dataset in extra_train_data:
@@ -144,23 +143,23 @@ def main(
     except Exception as e:
         print(f"Could not process extra train datasets due to an error : {e}")
 
-    # Extend datasets that are less than the greatest one. This allows for more balanced training.
+    # 最大のデータセットより小さいデータセットを拡張。これによりよりバランスの取れたトレーニングが可能
     attrs = ['train_data', 'frames', 'image_dir', 'video_files']
     extend_datasets(train_datasets, attrs, extend=extend_dataset)
 
-    # Process one dataset
+    # 1つのデータセットを処理
     if len(train_datasets) == 1:
         train_dataset = train_datasets[0]
 
-    # Process many datasets
+    # 複数のデータセットを処理
     else:
         train_dataset = torch.utils.data.ConcatDataset(train_datasets)
 
-    # Create parameters to optimize over with a condition (if "condition" is true, optimize it)
+    # 条件付きで最適化するパラメータを作成（"condition"がtrueの場合、最適化する）
     extra_unet_params = extra_unet_params if extra_unet_params is not None else {}
     extra_text_encoder_params = extra_unet_params if extra_unet_params is not None else {}
 
-    # Setup LoRA components
+    # LoRAコンポーネントの設定
     (lora_manager_temporal, unet_lora_params_temporal, unet_negation_temporal,
      optimizer_temporal, lr_scheduler_temporal,
      lora_managers_spatial, unet_lora_params_spatial_list,
@@ -187,13 +186,13 @@ def main(
         use_8bit_adam=use_8bit_adam
     )
 
-    # DataLoaders creation:
+    # データローダーの作成
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=train_batch_size,
         shuffle=False
     )
-    # Latents caching
+    # 潜在変数のキャッシュ
     cached_data_loader = handle_cache_latents(
         cache_latents,
         output_dir,
@@ -209,7 +208,7 @@ def main(
     if cached_data_loader is not None:
         train_dataloader = cached_data_loader
 
-    # Prepare everything with our `accelerator`.
+    # `accelerator`ですべてを準備
     unet, optimizer_spatial_list, optimizer_temporal, train_dataloader, lr_scheduler_spatial_list, lr_scheduler_temporal, text_encoder = accelerator.prepare(
         unet,
         optimizer_spatial_list, optimizer_temporal,
@@ -218,7 +217,7 @@ def main(
         text_encoder
     )
 
-    # Use Gradient Checkpointing if enabled.
+    # 有効な場合は勾配チェックポイントを使用
     unet_and_text_g_c(
         unet,
         text_encoder,
@@ -226,34 +225,34 @@ def main(
         text_encoder_gradient_checkpointing
     )
 
-    # Enable VAE slicing to save memory.
+    # メモリ節約のためVAEスライシングを有効化
     vae.enable_slicing()
 
-    # For mixed precision training we cast the text_encoder and vae weights to half-precision
-    # as these models are only used for inference, keeping weights in full precision is not required.
+    # 混合精度トレーニングでは、text_encoderとvaeの重みを半精度にキャスト
+    # これらのモデルは推論にのみ使用されるため、重みを全精度で保持する必要はない
     weight_dtype = is_mixed_precision(accelerator)
 
-    # Move text encoders, and VAE to GPU
+    # テキストエンコーダーとVAEをGPUに移動
     models_to_cast = [text_encoder, vae]
     cast_to_gpu_and_type(models_to_cast, accelerator, weight_dtype)
 
-    # Fix noise schedules to predcit light and dark areas if available.
+    # 利用可能な場合は明暗領域を予測するためにノイズスケジュールを修正
     if not use_offset_noise and rescale_schedule:
         noise_scheduler.betas = enforce_zero_terminal_snr(
             noise_scheduler.betas)
 
-    # We need to recalculate our total training steps as the size of the training dataloader may have changed.
+    # トレーニングデータローダーのサイズが変更された可能性があるため、総トレーニングステップ数を再計算する必要がある
     num_update_steps_per_epoch = math.ceil(
         len(train_dataloader) / gradient_accumulation_steps)
-    # Afterwards we recalculate our number of training epochs
+    # トレーニングエポック数を再計算
     num_train_epochs = math.ceil(max_train_steps / num_update_steps_per_epoch)
 
-    # We need to initialize the trackers we use, and also store our configuration.
-    # The trackers initializes automatically on the main process.
+    # 使用するトラッカーを初期化し、設定も保存する必要がある
+    # トラッカーはメインプロセスで自動的に初期化される
     if accelerator.is_main_process:
         accelerator.init_trackers("text2video-fine-tune")
 
-    # Train!
+    # ここから学習開始
     total_batch_size = train_batch_size * \
         accelerator.num_processes * gradient_accumulation_steps
 
@@ -269,154 +268,17 @@ def main(
     global_step = 0
     first_epoch = 0
 
-    # Only show the progress bar once on each machine.
+    # 各マシンでプログレスバーを一度だけ表示
     progress_bar = tqdm(range(global_step, max_train_steps),
                         disable=not accelerator.is_local_main_process)
     progress_bar.set_description("Steps")
-
-    def finetune_unet(batch, step, mask_spatial_lora=False, mask_temporal_lora=False):
-        nonlocal use_offset_noise
-        nonlocal rescale_schedule
-
-        # Unfreeze UNET Layers
-        if global_step == 0:
-            unet.train()
-            handle_trainable_modules(
-                unet,
-                trainable_modules,
-                is_enabled=True,
-                negation=unet_negation_all
-            )
-
-        # Convert videos to latent space
-        if not cache_latents:
-            latents = tensor_to_vae_latent(batch["pixel_values"], vae)
-        else:
-            latents = batch["latents"]
-
-        # Sample noise that we'll add to the latents
-        use_offset_noise = use_offset_noise and not rescale_schedule
-        noise = sample_noise(latents, offset_noise_strength, use_offset_noise)
-        bsz = latents.shape[0]
-
-        # Sample a random timestep for each video
-        timesteps = torch.randint(
-            0, noise_scheduler.config.num_train_timesteps, (bsz,), device=latents.device)
-        timesteps = timesteps.long()
-
-        # Add noise to the latents according to the noise magnitude at each timestep
-        # (this is the forward diffusion process)
-        noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
-
-        # *Potentially* Fixes gradient checkpointing training.
-        # See: https://github.com/prigoyal/pytorch_memonger/blob/master/tutorial/Checkpointing_for_PyTorch_models.ipynb
-        if kwargs.get('eval_train', False):
-            unet.eval()
-            text_encoder.eval()
-
-        # Encode text embeddings
-        token_ids = batch['prompt_ids']
-        encoder_hidden_states = text_encoder(token_ids)[0]
-        detached_encoder_state = encoder_hidden_states.clone().detach()
-
-        # Get the target for loss depending on the prediction type
-        if noise_scheduler.config.prediction_type == "epsilon":
-            target = noise
-
-        elif noise_scheduler.config.prediction_type == "v_prediction":
-            target = noise_scheduler.get_velocity(latents, noise, timesteps)
-
-        else:
-            raise ValueError(
-                f"Unknown prediction type {noise_scheduler.config.prediction_type}")
-
-        encoder_hidden_states = detached_encoder_state
-
-        if mask_spatial_lora:
-            loras = extract_lora_child_module(
-                unet, target_replace_module=["Transformer2DModel"])
-            for lora_i in loras:
-                lora_i.scale = 0.
-            loss_spatial = None
-        else:
-            loras = extract_lora_child_module(
-                unet, target_replace_module=["Transformer2DModel"])
-
-            if spatial_lora_num == 1:
-                for lora_i in loras:
-                    lora_i.scale = 1.
-            else:
-                for lora_i in loras:
-                    lora_i.scale = 0.
-
-                for lora_idx in range(0, len(loras), spatial_lora_num):
-                    loras[lora_idx + step].scale = 1.
-
-            loras = extract_lora_child_module(unet, target_replace_module=[
-                                              "TransformerTemporalModel"])
-            if len(loras) > 0:
-                for lora_i in loras:
-                    lora_i.scale = 0.
-
-            ran_idx = torch.randint(0, noisy_latents.shape[2], (1,)).item()
-
-            if random.uniform(0, 1) < random_hflip_img:
-                pixel_values_spatial = transforms.functional.hflip(
-                    batch["pixel_values"][:, ran_idx, :, :, :]).unsqueeze(1)
-                latents_spatial = tensor_to_vae_latent(
-                    pixel_values_spatial, vae)
-                noise_spatial = sample_noise(
-                    latents_spatial, offset_noise_strength, use_offset_noise)
-                noisy_latents_input = noise_scheduler.add_noise(
-                    latents_spatial, noise_spatial, timesteps)
-                target_spatial = noise_spatial
-                model_pred_spatial = unet(noisy_latents_input, timesteps,
-                                          encoder_hidden_states=encoder_hidden_states).sample
-                loss_spatial = F.mse_loss(model_pred_spatial[:, :, 0, :, :].float(),
-                                          target_spatial[:, :, 0, :, :].float(), reduction="mean")
-            else:
-                noisy_latents_input = noisy_latents[:, :, ran_idx, :, :]
-                target_spatial = target[:, :, ran_idx, :, :]
-                model_pred_spatial = unet(noisy_latents_input.unsqueeze(2), timesteps,
-                                          encoder_hidden_states=encoder_hidden_states).sample
-                loss_spatial = F.mse_loss(model_pred_spatial[:, :, 0, :, :].float(),
-                                          target_spatial.float(), reduction="mean")
-
-        if mask_temporal_lora:
-            loras = extract_lora_child_module(unet, target_replace_module=[
-                                              "TransformerTemporalModel"])
-            for lora_i in loras:
-                lora_i.scale = 0.
-            loss_temporal = None
-        else:
-            loras = extract_lora_child_module(unet, target_replace_module=[
-                                              "TransformerTemporalModel"])
-            for lora_i in loras:
-                lora_i.scale = 1.
-            model_pred = unet(noisy_latents, timesteps,
-                              encoder_hidden_states=encoder_hidden_states).sample
-            loss_temporal = F.mse_loss(
-                model_pred.float(), target.float(), reduction="mean")
-
-            beta = 1
-            alpha = (beta ** 2 + 1) ** 0.5
-            ran_idx = torch.randint(0, model_pred.shape[2], (1,)).item()
-            model_pred_decent = alpha * model_pred - beta * \
-                model_pred[:, :, ran_idx, :, :].unsqueeze(2)
-            target_decent = alpha * target - beta * \
-                target[:, :, ran_idx, :, :].unsqueeze(2)
-            loss_ad_temporal = F.mse_loss(
-                model_pred_decent.float(), target_decent.float(), reduction="mean")
-            loss_temporal = loss_temporal + loss_ad_temporal
-
-        return loss_spatial, loss_temporal, latents, noise
 
     for epoch in range(first_epoch, num_train_epochs):
         train_loss_spatial = 0.0
         train_loss_temporal = 0.0
 
         for step, batch in enumerate(train_dataloader):
-            # Skip steps until we reach the resumed step
+            # 再開ステップに到達するまでステップをスキップ
             if resume_from_checkpoint and epoch == first_epoch and step < resume_step:
                 if step % gradient_accumulation_steps == 0:
                     progress_bar.update(1)
@@ -440,10 +302,28 @@ def main(
                     0, 1) < 0.2 and not mask_temporal_lora
 
                 with accelerator.autocast():
-                    loss_spatial, loss_temporal, latents, init_noise = finetune_unet(
-                        batch, step, mask_spatial_lora=mask_spatial_lora, mask_temporal_lora=mask_temporal_lora)
+                    loss_spatial, loss_temporal, latents, init_noise = train_lora_unet(
+                        batch=batch,
+                        step=step,
+                        unet=unet,
+                        vae=vae,
+                        text_encoder=text_encoder,
+                        noise_scheduler=noise_scheduler,
+                        global_step=global_step,
+                        trainable_modules=trainable_modules,
+                        unet_negation_all=unet_negation_all,
+                        cache_latents=cache_latents,
+                        use_offset_noise=use_offset_noise,
+                        rescale_schedule=rescale_schedule,
+                        offset_noise_strength=offset_noise_strength,
+                        spatial_lora_num=spatial_lora_num,
+                        random_hflip_img=random_hflip_img,
+                        mask_spatial_lora=mask_spatial_lora,
+                        mask_temporal_lora=mask_temporal_lora,
+                        **kwargs
+                    )
 
-                # Gather the losses across all processes for logging (if we use distributed training).
+                # 分散トレーニングを使用する場合、ログ用にすべてのプロセスから損失を収集
                 if not mask_spatial_lora:
                     avg_loss_spatial = accelerator.gather(
                         loss_spatial.repeat(train_batch_size)).mean()
@@ -473,7 +353,7 @@ def main(
                 if lr_scheduler_temporal is not None:
                     lr_scheduler_temporal.step()
 
-            # Checks if the accelerator has performed an optimization step behind the scenes
+            # アクセラレーターが裏で最適化ステップを実行したかチェック
             if accelerator.sync_gradients:
                 progress_bar.update(1)
                 global_step += 1
@@ -499,7 +379,7 @@ def main(
 
                 if should_sample(global_step, validation_steps, validation_data):
                     if accelerator.is_main_process:
-                        # Set seed for validation if specified
+                        # 指定されている場合はバリデーション用のシードを設定
                         if hasattr(validation_data, 'seed') and validation_data.seed is not None:
                             torch.manual_seed(validation_data.seed)
                             logger.info(f"Using validation seed: {validation_data.seed}")
@@ -568,7 +448,7 @@ def main(
             if global_step >= max_train_steps:
                 break
 
-    # Create the pipeline using the trained modules and save it.
+    # 訓練されたモジュールを使用してパイプラインを作成し、保存
     accelerator.wait_for_everyone()
     if accelerator.is_main_process:
         save_pipe(
