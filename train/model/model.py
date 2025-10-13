@@ -350,118 +350,162 @@ class TextToVideoModel:
                         progress_bar.update(1)
                     continue
 
-                with self.accelerator.accumulate(self.unet), self.accelerator.accumulate(self.text_encoder):
-                    text_prompt = batch['text_prompt'][0]
-
-                    # Zero gradients
-                    for optimizer_spatial in self.optimizer_spatial_list:
-                        optimizer_spatial.zero_grad(set_to_none=True)
-
-                    if self.optimizer_temporal is not None:
-                        self.optimizer_temporal.zero_grad(set_to_none=True)
-
-                    # Setup masking
-                    if self.train_temporal_lora:
-                        mask_temporal_lora = False
-                    else:
-                        mask_temporal_lora = True
-                    mask_spatial_lora = random.uniform(
-                        0, 1) < 0.2 and not mask_temporal_lora
-
-                    # Forward pass
-                    with self.accelerator.autocast():
-                        loss_spatial, loss_temporal, _, _ = train_lora_unet(
-                            batch=batch,
-                            step=step,
-                            unet=self.unet,
-                            vae=self.vae,
-                            text_encoder=self.text_encoder,
-                            noise_scheduler=self.noise_scheduler,
-                            global_step=global_step,
-                            trainable_modules=self.trainable_modules,
-                            unet_negation_all=self.unet_negation_all,
-                            cache_latents=self.cache_latents,
-                            use_offset_noise=self.use_offset_noise,
-                            rescale_schedule=self.rescale_schedule,
-                            offset_noise_strength=self.offset_noise_strength,
-                            spatial_lora_num=self.spatial_lora_num,
-                            random_hflip_img=self.random_hflip_img,
-                            mask_spatial_lora=mask_spatial_lora,
-                            mask_temporal_lora=mask_temporal_lora,
-                            **self.kwargs
-                        )
-
-                    # Gather losses for logging
-                    if not mask_spatial_lora:
-                        avg_loss_spatial = self.accelerator.gather(
-                            loss_spatial.repeat(self.train_batch_size)).mean()
-                        train_loss_spatial += avg_loss_spatial.item() / self.gradient_accumulation_steps
-
-                    if not mask_temporal_lora and self.train_temporal_lora:
-                        avg_loss_temporal = self.accelerator.gather(
-                            loss_temporal.repeat(self.train_batch_size)).mean()
-                        train_loss_temporal += avg_loss_temporal.item() / self.gradient_accumulation_steps
-
-                    # Backward pass
-                    if not mask_spatial_lora:
-                        self.accelerator.backward(loss_spatial, retain_graph=True)
-                        if self.spatial_lora_num == 1:
-                            self.optimizer_spatial_list[0].step()
-                        else:
-                            self.optimizer_spatial_list[step].step()
-
-                    if not mask_temporal_lora and self.train_temporal_lora:
-                        self.accelerator.backward(loss_temporal)
-                        self.optimizer_temporal.step()
-
-                    # Update learning rate schedulers
-                    if self.spatial_lora_num == 1:
-                        self.lr_scheduler_spatial_list[0].step()
-                    else:
-                        self.lr_scheduler_spatial_list[step].step()
-                    if self.lr_scheduler_temporal is not None:
-                        self.lr_scheduler_temporal.step()
-
-                # Check if accelerator performed optimization step
-                if self.accelerator.sync_gradients:
-                    progress_bar.update(1)
-                    global_step += 1
-                    self.accelerator.log(
-                        {"train_loss": train_loss_temporal}, step=global_step)
-                    train_loss_temporal = 0.0
-
-                    # Save checkpoint
-                    if global_step % self.checkpointing_steps == 0 and global_step > 0:
-                        save_pipe(
-                            self.pretrained_model_path,
-                            global_step,
-                            self.accelerator,
-                            self.unet,
-                            self.text_encoder,
-                            self.vae,
-                            self.output_dir,
-                            self.lora_managers_spatial[0] if self.lora_managers_spatial else None,
-                            self.lora_manager_temporal,
-                            self.unet_lora_modules,
-                            self.text_encoder_lora_modules,
-                            is_checkpoint=True,
-                            save_pretrained_model=self.save_pretrained_model
-                        )
-
-                    # Validation sampling
-                    if should_sample(global_step, self.validation_steps, self.validation_data):
-                        self._run_validation(global_step, batch, text_prompt)
-
-                # Log temporal loss
-                if loss_temporal is not None:
-                    self.accelerator.log(
-                        {"loss_temporal": loss_temporal.detach().item()}, step=step)
+                global_step = self.train_step(step, batch, global_step, progress_bar,
+                                              train_loss_spatial, train_loss_temporal)
 
                 # Check if training is complete
                 if global_step >= self.max_train_steps:
                     break
 
+            # Check if training is complete
+            if global_step >= self.max_train_steps:
+                break
+
         # Save final model
+        self._save_final_model(global_step)
+        self.accelerator.end_training()
+
+    def train_step(self, step, batch, global_step, progress_bar, train_loss_spatial, train_loss_temporal):
+        """Train for one step"""
+        with self.accelerator.accumulate(self.unet), self.accelerator.accumulate(self.text_encoder):
+            text_prompt = batch['text_prompt'][0]
+
+            # Setup masking
+            mask_temporal_lora, mask_spatial_lora = self._setup_masking()
+
+            # Forward and backward pass
+            loss_spatial, loss_temporal = self._forward_backward_pass(
+                step, batch, global_step, mask_spatial_lora, mask_temporal_lora
+            )
+
+            # Gather losses for logging
+            train_loss_spatial, train_loss_temporal = self._gather_losses(
+                loss_spatial, loss_temporal, mask_spatial_lora, mask_temporal_lora,
+                train_loss_spatial, train_loss_temporal
+            )
+
+        # Check if accelerator performed optimization step
+        if self.accelerator.sync_gradients:
+            progress_bar.update(1)
+            global_step += 1
+            self.accelerator.log(
+                {"train_loss": train_loss_temporal}, step=global_step)
+            train_loss_temporal = 0.0
+
+            # Checkpoint and validation
+            self._checkpoint_and_validation(global_step, batch, text_prompt)
+
+        # Log temporal loss
+        if loss_temporal is not None:
+            self.accelerator.log(
+                {"loss_temporal": loss_temporal.detach().item()}, step=step)
+
+        return global_step
+
+    def _setup_masking(self):
+        """Setup masking for LoRA training"""
+        if self.train_temporal_lora:
+            mask_temporal_lora = False
+        else:
+            mask_temporal_lora = True
+        mask_spatial_lora = random.uniform(0, 1) < 0.2 and not mask_temporal_lora
+        return mask_temporal_lora, mask_spatial_lora
+
+    def _forward_backward_pass(self, step, batch, global_step, mask_spatial_lora, mask_temporal_lora):
+        """Perform forward and backward pass"""
+        # Zero gradients
+        for optimizer_spatial in self.optimizer_spatial_list:
+            optimizer_spatial.zero_grad(set_to_none=True)
+
+        if self.optimizer_temporal is not None:
+            self.optimizer_temporal.zero_grad(set_to_none=True)
+
+        # Forward pass
+        with self.accelerator.autocast():
+            loss_spatial, loss_temporal, _, _ = train_lora_unet(
+                batch=batch,
+                step=step,
+                unet=self.unet,
+                vae=self.vae,
+                text_encoder=self.text_encoder,
+                noise_scheduler=self.noise_scheduler,
+                global_step=global_step,
+                trainable_modules=self.trainable_modules,
+                unet_negation_all=self.unet_negation_all,
+                cache_latents=self.cache_latents,
+                use_offset_noise=self.use_offset_noise,
+                rescale_schedule=self.rescale_schedule,
+                offset_noise_strength=self.offset_noise_strength,
+                spatial_lora_num=self.spatial_lora_num,
+                random_hflip_img=self.random_hflip_img,
+                mask_spatial_lora=mask_spatial_lora,
+                mask_temporal_lora=mask_temporal_lora,
+                **self.kwargs
+            )
+
+        # Backward pass
+        if not mask_spatial_lora:
+            self.accelerator.backward(loss_spatial, retain_graph=True)
+            if self.spatial_lora_num == 1:
+                self.optimizer_spatial_list[0].step()
+            else:
+                self.optimizer_spatial_list[step].step()
+
+        if not mask_temporal_lora and self.train_temporal_lora:
+            self.accelerator.backward(loss_temporal)
+            self.optimizer_temporal.step()
+
+        # Update learning rate schedulers
+        if self.spatial_lora_num == 1:
+            self.lr_scheduler_spatial_list[0].step()
+        else:
+            self.lr_scheduler_spatial_list[step].step()
+        if self.lr_scheduler_temporal is not None:
+            self.lr_scheduler_temporal.step()
+
+        return loss_spatial, loss_temporal
+
+    def _gather_losses(self, loss_spatial, loss_temporal, mask_spatial_lora, mask_temporal_lora,
+                       train_loss_spatial, train_loss_temporal):
+        """Gather losses for logging"""
+        if not mask_spatial_lora:
+            avg_loss_spatial = self.accelerator.gather(
+                loss_spatial.repeat(self.train_batch_size)).mean()
+            train_loss_spatial += avg_loss_spatial.item() / self.gradient_accumulation_steps
+
+        if not mask_temporal_lora and self.train_temporal_lora:
+            avg_loss_temporal = self.accelerator.gather(
+                loss_temporal.repeat(self.train_batch_size)).mean()
+            train_loss_temporal += avg_loss_temporal.item() / self.gradient_accumulation_steps
+
+        return train_loss_spatial, train_loss_temporal
+
+    def _checkpoint_and_validation(self, global_step, batch, text_prompt):
+        """Handle checkpoint saving and validation"""
+        # Save checkpoint
+        if global_step % self.checkpointing_steps == 0 and global_step > 0:
+            save_pipe(
+                self.pretrained_model_path,
+                global_step,
+                self.accelerator,
+                self.unet,
+                self.text_encoder,
+                self.vae,
+                self.output_dir,
+                self.lora_managers_spatial[0] if self.lora_managers_spatial else None,
+                self.lora_manager_temporal,
+                self.unet_lora_modules,
+                self.text_encoder_lora_modules,
+                is_checkpoint=True,
+                save_pretrained_model=self.save_pretrained_model
+            )
+
+        # Validation sampling
+        if should_sample(global_step, self.validation_steps, self.validation_data):
+            self._run_validation(global_step, batch, text_prompt)
+
+    def _save_final_model(self, global_step):
+        """Save final model"""
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
             save_pipe(
@@ -479,7 +523,6 @@ class TextToVideoModel:
                 is_checkpoint=False,
                 save_pretrained_model=self.save_pretrained_model
             )
-        self.accelerator.end_training()
 
     def _run_validation(self, global_step, batch, text_prompt):
         """Run validation sampling"""
