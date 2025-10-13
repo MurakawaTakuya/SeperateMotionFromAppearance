@@ -21,6 +21,7 @@ from utils.lora import extract_lora_child_module
 from train.utils.logging_utils import (
     create_logging, accelerate_set_verbose, create_output_folders
 )
+from logger import configure_logger
 from train.utils.validation_utils import (
     should_sample, export_to_video, save_pipe
 )
@@ -95,6 +96,7 @@ class TextToVideoModel:
         lora_path: str = '',
         lora_unet_dropout: float = 0.1,
         logger_type: str = 'tensorboard',
+        disable_comet: bool = False,
         **kwargs
     ):
         # Store all parameters as instance variables
@@ -146,11 +148,13 @@ class TextToVideoModel:
         self.lora_path = lora_path
         self.lora_unet_dropout = lora_unet_dropout
         self.logger_type = logger_type
+        self.disable_comet = disable_comet
         self.kwargs = kwargs
 
         # Initialize components
         self._setup_accelerator()
         self._setup_logging()
+        self._setup_comet_logger()
         self._setup_output_folders()
         self._load_models()
         self._setup_training_components()
@@ -173,6 +177,19 @@ class TextToVideoModel:
         """Setup logging"""
         create_logging(logging, logger, self.accelerator)
         accelerate_set_verbose(self.accelerator)
+
+    def _setup_comet_logger(self):
+        """Setup Comet logger"""
+        # Convert config to dict for Comet logging
+        config_dict = {k: v for k, v in self.config.items() if k != 'self'}
+        self.comet_experiment = configure_logger(
+            logged_params=config_dict,
+            model_name='train',
+            disable_logging=self.disable_comet,
+        )
+
+        # Log YAML config to Comet
+        self._log_yaml_to_comet(config_dict)
 
     def _setup_output_folders(self):
         """Setup output folders"""
@@ -365,6 +382,10 @@ class TextToVideoModel:
         self._save_final_model(global_step)
         self.accelerator.end_training()
 
+        # End Comet experiment
+        if hasattr(self, 'comet_experiment') and not self.comet_experiment.disabled:
+            self.comet_experiment.end()
+
     def train_step(self, step, batch, global_step, progress_bar, train_loss_spatial, train_loss_temporal):
         """Train for one step"""
         with self.accelerator.accumulate(self.unet), self.accelerator.accumulate(self.text_encoder):
@@ -388,8 +409,8 @@ class TextToVideoModel:
         if self.accelerator.sync_gradients:
             progress_bar.update(1)
             global_step += 1
-            self.accelerator.log(
-                {"train_loss": train_loss_temporal}, step=global_step)
+            self._log_metrics(
+                {"train/train_loss": train_loss_temporal}, global_step)
             train_loss_temporal = 0.0
 
             # Checkpoint and validation
@@ -397,10 +418,58 @@ class TextToVideoModel:
 
         # Log temporal loss
         if loss_temporal is not None:
-            self.accelerator.log(
-                {"loss_temporal": loss_temporal.detach().item()}, step=step)
+            self._log_metrics(
+                {"train/temporal_loss": loss_temporal.detach().item()}, global_step)
 
         return global_step
+
+    def _log_metrics(self, metrics_dict, step):
+        """Log metrics to Comet"""
+        if hasattr(self, 'comet_experiment') and not self.comet_experiment.disabled:
+            for key, value in metrics_dict.items():
+                self.comet_experiment.log_metric(key, value, step=step)
+
+    def _log_video_to_comet(self, video_file_path, video_name, step):
+        """Log video to Comet using exported video file"""
+        if hasattr(self, 'comet_experiment') and not self.comet_experiment.disabled:
+            try:
+                # Log video file to Comet
+                self.comet_experiment.log_video(
+                    video_file_path,
+                    name=video_name,
+                    step=step,
+                    metadata={"prompt": video_name}
+                )
+                self.comet_experiment.flush()
+                logger.info(f"Logged video {video_name} to Comet (video panel) at step {step}")
+            except Exception as e:
+                logger.warning(f"Failed to log video to Comet: {e}")
+
+    def _log_yaml_to_comet(self, config_dict):
+        """Log YAML config to Comet"""
+        if hasattr(self, 'comet_experiment') and not self.comet_experiment.disabled:
+            try:
+                import yaml
+                import tempfile
+                import os
+
+                # Create temporary YAML file
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+                    yaml.dump(config_dict, f, default_flow_style=False, allow_unicode=True)
+                    temp_yaml_path = f.name
+
+                # Log YAML file to Comet
+                self.comet_experiment.log_asset(
+                    temp_yaml_path,
+                    file_name="training_config.yaml"
+                )
+
+                # Clean up temporary file
+                os.unlink(temp_yaml_path)
+
+                logger.info("Logged training config YAML to Comet")
+            except Exception as e:
+                logger.warning(f"Failed to log YAML config to Comet: {e}")
 
     def _setup_masking(self):
         """Setup masking for LoRA training"""
@@ -583,6 +652,9 @@ class TextToVideoModel:
                     export_to_video(
                         video_frames, out_file, self.train_data.get('fps', 8))
                     logger.info(f"Saved a new sample to {out_file}")
+
+                    # Log video to Comet using the exported video file
+                    self._log_video_to_comet(out_file, save_filename, global_step)
 
                 del pipeline
                 torch.cuda.empty_cache()

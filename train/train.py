@@ -63,6 +63,7 @@ def main(
         lora_path: str = '',
         lora_unet_dropout: float = 0.1,
         logger_type: str = 'tensorboard',
+        disable_comet: bool = False,
         **kwargs
 ):
     """
@@ -117,6 +118,7 @@ def main(
         lora_path=lora_path,
         lora_unet_dropout=lora_unet_dropout,
         logger_type=logger_type,
+        disable_comet=disable_comet,
         **kwargs
     )
 
