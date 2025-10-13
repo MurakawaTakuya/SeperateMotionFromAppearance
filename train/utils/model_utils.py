@@ -45,7 +45,7 @@ def unet_and_text_g_c(unet, text_encoder, unet_enable, text_enable):
 
 def is_attn(name):
     """Check if module name is an attention module."""
-    return ('attn1' or 'attn2' == name.split('.')[-1])
+    return name.split('.')[-1] in ('attn1', 'attn2')
 
 
 def set_processors(attentions):

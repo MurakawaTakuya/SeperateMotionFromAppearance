@@ -5,7 +5,7 @@ LoRA-related utility functions.
 
 def param_optim(model, condition, extra_params=None, is_lora=False, negation=None):
     """Create parameter optimization configuration."""
-    extra_params = extra_params if len(extra_params.keys()) > 0 else None
+    extra_params = extra_params if extra_params is not None and len(extra_params.keys()) > 0 else None
     return {
         "model": model,
         "condition": condition,
