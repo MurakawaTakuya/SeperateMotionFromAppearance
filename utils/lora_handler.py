@@ -5,7 +5,6 @@ from typing import Union
 from types import SimpleNamespace
 from models.unet_3d_condition import UNet3DConditionModel
 from transformers import CLIPTextModel
-from utils.convert_diffusers_to_original_ms_text_to_video import convert_unet_state_dict, convert_text_enc_state_dict_v20
 
 from .lora import (
     extract_lora_ups_down,
