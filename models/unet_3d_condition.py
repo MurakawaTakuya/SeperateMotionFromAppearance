@@ -403,7 +403,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
         # 2. pre-process
         sample = sample.permute(0, 2, 1, 3, 4).reshape((sample.shape[0] * num_frames, -1) + sample.shape[3:])
         sample = self.conv_in(sample)
-        
+
         if num_frames > 1:
             if self.gradient_checkpointing:
                 sample = transformer_g_c(self.transformer_in, sample, num_frames)
@@ -456,7 +456,7 @@ class UNet3DConditionModel(ModelMixin, ConfigMixin):
         for i, upsample_block in enumerate(self.up_blocks):
             is_final_block = i == len(self.up_blocks) - 1
 
-            res_samples = down_block_res_samples[-len(upsample_block.resnets) :]
+            res_samples = down_block_res_samples[-len(upsample_block.resnets):]
             down_block_res_samples = down_block_res_samples[: -len(upsample_block.resnets)]
 
             # if we have not reached the final block and need to forward the
