@@ -9,8 +9,8 @@ from tqdm.auto import tqdm
 from diffusers import DDIMScheduler, TextToVideoSDPipeline
 
 # First-party imports
-from utils.ddim_utils import ddim_inversion
-from utils.dataset import CachedDataset
+from train.utils.ddim_utils import ddim_inversion
+from train.utils.dataset import CachedDataset
 
 # Local imports
 from .model_utils import tensor_to_vae_latent

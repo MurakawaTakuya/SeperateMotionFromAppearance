@@ -15,7 +15,7 @@ from accelerate.logging import get_logger
 from diffusers import DDIMScheduler, TextToVideoSDPipeline
 
 # First-party imports
-from utils.lora import extract_lora_child_module
+from train.utils.lora import extract_lora_child_module
 
 # Local imports
 from train.utils.logging_utils import (

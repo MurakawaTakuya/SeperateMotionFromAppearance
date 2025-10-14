@@ -17,8 +17,8 @@ from tqdm import trange
 import random
 from diffusers.models import AutoencoderKL
 # from MotionDirector_train import export_to_video, handle_memory_attention, load_primary_models, unet_and_text_g_c, freeze_models
-from utils.lora_handler import LoraHandler
-from utils.ddim_utils import ddim_inversion
+from infer.utils.lora_handler import LoraHandler
+from infer.utils.ddim_utils import ddim_inversion
 import imageio
 import ast
 
@@ -264,11 +264,6 @@ def inference(
                     num_inference_steps=num_steps,
                     guidance_scale=guidance_scale,
                     latents=init_latents,
-                    label=f"{out_name}_{random_seed}_{ckpt_idx}",
-                    freeu={'s1': freeu[0], "s2": freeu[1],
-                           "b1": freeu[2], "b2": freeu[3]},
-                    earlystep=earlystep,
-                    infer=True,
                     # seed=seed,
                 ).frames
 
