@@ -418,8 +418,12 @@ class TextToVideoModel:
 
         # Log temporal loss
         if loss_temporal is not None:
+            # 各accumulation stepを個別に記録
+            accumulation_step = step % self.gradient_accumulation_steps
             self._log_metrics(
-                {"train/temporal_loss": loss_temporal.detach().item()}, global_step)
+                {"train/temporal_loss": loss_temporal.detach().item()},
+                global_step * self.gradient_accumulation_steps + accumulation_step
+            )
 
         return global_step
 
