@@ -26,8 +26,8 @@ def extract_frames(input_path, output_path, target_fps, selected_frames):
 
 
 if __name__ == "__main__":
-    input_video_path = "../test_data/zoom/zoom_out.mp4"
-    output_video_path = "../test_data/zoom/zoom_out_16.mp4"
+    input_video_path = "../train_data/zoom/zoom_out.mp4"
+    output_video_path = "../train_data/zoom/zoom_out_16.mp4"
     target_fps = 8
     selected_frames = 16
 

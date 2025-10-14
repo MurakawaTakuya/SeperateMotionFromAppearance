@@ -54,7 +54,7 @@ train_data:
   n_sample_frames: 16
 
   # 'multiple videos'
-  path: "test_data/ucf_sports_actions/ucf action/Walk-Front/videos"
+  path: "train_data/ucf_sports_actions/ucf action/Walk-Front/videos"
 
   # The prompt when using a single video file
   fallback_prompt: "A person is walking."

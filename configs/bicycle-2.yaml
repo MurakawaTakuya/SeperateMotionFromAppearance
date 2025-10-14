@@ -57,7 +57,7 @@ train_data:
   n_sample_frames: 16
 
   # 'single_video'
-  single_video_path: "./test_data/bicycle/stock-footage-woman-riding-bike-on-city-paved-road-woman-bicycle-rider-have-a-ride-in-the-morning-empty-city.mp4"
+  single_video_path: "./train_data/bicycle/stock-footage-woman-riding-bike-on-city-paved-road-woman-bicycle-rider-have-a-ride-in-the-morning-empty-city.mp4"
 
   # The prompt when using a single video file
   fallback_prompt: "A person is riding a bicycle."

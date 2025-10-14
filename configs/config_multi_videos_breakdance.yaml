@@ -54,7 +54,7 @@ train_data:
   n_sample_frames: 16
 
   # 'multiple videos'
-  path: "./test_data/breakdance/"
+  path: "./train_data/breakdance/"
 
   # The prompt when using a single video file
   fallback_prompt: "A person is breakdancing."
