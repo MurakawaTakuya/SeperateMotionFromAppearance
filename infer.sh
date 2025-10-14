@@ -1,4 +1,4 @@
-python infer/infer.py \
+python -m infer.infer \
     --model "models/zeroscope_v2_576w" \
     --prompt "A person is skateboarding." \
     --checkpoint_folder outputs/train/train_2025-10-05T13-13-18/ \

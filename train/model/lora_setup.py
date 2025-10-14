@@ -4,7 +4,7 @@ from train.utils.optimization_utils import create_optimizer_params, get_optimize
 from diffusers.optimization import get_scheduler
 
 # First-party imports
-from utils.lora_handler import LoraHandler
+from train.utils.lora_handler import LoraHandler
 
 # Local imports
 import sys

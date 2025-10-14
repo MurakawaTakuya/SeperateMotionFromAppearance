@@ -11,7 +11,7 @@ import numpy as np
 from diffusers import TextToVideoSDPipeline
 
 # First-party imports
-from utils.lora_handler import LoraHandler
+from train.utils.lora_handler import LoraHandler
 parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)

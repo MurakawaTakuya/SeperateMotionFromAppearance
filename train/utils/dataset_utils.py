@@ -1,7 +1,7 @@
 """
 Dataset-related utility functions.
 """
-from utils.dataset import VideoJsonDataset, SingleVideoDataset, ImageDataset, VideoFolderDataset
+from train.utils.dataset import VideoJsonDataset, SingleVideoDataset, ImageDataset, VideoFolderDataset
 import sys
 import os
 parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))

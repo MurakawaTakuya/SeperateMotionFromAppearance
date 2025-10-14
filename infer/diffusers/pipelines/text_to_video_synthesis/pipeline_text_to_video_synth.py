@@ -31,7 +31,6 @@ from ...utils import (
 )
 from ..pipeline_utils import DiffusionPipeline
 from . import TextToVideoSDPipelineOutput
-from utils.lora import extract_lora_child_module
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
@@ -284,7 +283,7 @@ class TextToVideoSDPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lora
                 text_input_ids, untruncated_ids
             ):
                 removed_text = self.tokenizer.batch_decode(
-                    untruncated_ids[:, self.tokenizer.model_max_length - 1 : -1]
+                    untruncated_ids[:, self.tokenizer.model_max_length - 1: -1]
                 )
                 logger.warning(
                     "The following part of your input was truncated because CLIP can only handle sequences up to"
@@ -643,7 +642,6 @@ class TextToVideoSDPipeline(DiffusionPipeline, TextualInversionLoaderMixin, Lora
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
-                
 
                 # if i >= self.earlystep:
                 #     loras = extract_lora_child_module(self.unet, target_replace_module=["TransformerTemporalModel"])

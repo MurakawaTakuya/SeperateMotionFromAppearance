@@ -1,7 +1,7 @@
 # Standard library imports
 from train.utils.model_utils import tensor_to_vae_latent, sample_noise
 from train.utils.training_utils import handle_trainable_modules
-from utils.lora import extract_lora_child_module
+from train.utils.lora import extract_lora_child_module
 import random
 
 # Third-party library imports
