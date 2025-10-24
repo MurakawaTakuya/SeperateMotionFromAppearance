@@ -5,7 +5,7 @@ pretrained_model_path: "./models/zeroscope_v2_576w"
 output_dir: "./outputs/train"
 
 dataset_types:
-  - "folder"
+  - "motions"
 
 # Caches the latents (Frames-Image -> VAE -> Latent) to a HDD or SDD.
 # The latents will be saved under your training folder, and loaded automatically for training.
@@ -58,11 +58,11 @@ train_data:
 
   # Path to the multiple videos.
   # TODO: 全クラスのパスを入れる
-  path: "/home/murakawa/SMFA/HMDB51_and_Activity_net"
+  path: "train_data/HMDB51_and_Activity_net/"
 
   # The prompt when using a single video file
   # TODO: change
-  fallback_prompt: "A person is walking."
+  fallback_prompt: "A person is diving to the water."
 
   # Verb Dictionary - List of action verbs for training
   # TODO: この項目を使用
@@ -93,8 +93,8 @@ validation_data:
   # A custom prompt that is different from your training dataset.
   # TODO: change
   prompt:
-    - "A person is walking past the Eiffel Tower."
-    - "A panda is walking in a garden."
+    - "A man is diving at the coast"
+    - "A panda is diving at the coast"
 
   # Whether or not to sample preview during training (Requires more VRAM).
   sample_preview: True
