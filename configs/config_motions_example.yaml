@@ -145,11 +145,11 @@ mixed_precision: "fp16"
 
 # Trades VRAM usage for speed. You lose roughly 20% of training speed, but save a lot of VRAM.
 # If you need to save more VRAM, it can also be enabled for the text encoder, but reduces speed x2.
-gradient_checkpointing: False
+gradient_checkpointing: True
 text_encoder_gradient_checkpointing: False
 
 # Xformers must be installed for best memory savings and performance (< Pytorch 2.0)
-enable_xformers_memory_efficient_attention: True
+enable_xformers_memory_efficient_attention: False
 
 # Use scaled dot product attention (Only available with >= Torch 2.0)
 enable_torch_2_attn: True

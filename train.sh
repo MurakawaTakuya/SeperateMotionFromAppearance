@@ -1,1 +1,1 @@
-python -m train.train --config configs/config_multi_motions_example.yaml
+python -m train.train --config configs/config_motions_example.yaml

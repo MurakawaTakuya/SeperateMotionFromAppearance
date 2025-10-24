@@ -1,7 +1,7 @@
 """
 Dataset-related utility functions.
 """
-from train.utils.dataset import VideoJsonDataset, SingleVideoDataset, ImageDataset, VideoFolderDataset
+from train.utils.dataset import VideoJsonDataset, SingleVideoDataset, ImageDataset, VideoFolderDataset, MotionDataset
 import sys
 import os
 parent_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -14,7 +14,7 @@ def get_train_dataset(dataset_types, train_data, tokenizer):
     train_datasets = []
 
     # Loop through all available datasets, get the name, then add to list of data to process.
-    for DataSet in [VideoJsonDataset, SingleVideoDataset, ImageDataset, VideoFolderDataset]:
+    for DataSet in [VideoJsonDataset, SingleVideoDataset, ImageDataset, VideoFolderDataset, MotionDataset]:
         for dataset in dataset_types:
             if dataset == DataSet.__getname__():
                 train_datasets.append(
@@ -24,7 +24,7 @@ def get_train_dataset(dataset_types, train_data, tokenizer):
         return train_datasets
     else:
         raise ValueError(
-            "Dataset type not found: 'json', 'single_video', 'folder', 'image'")
+            "Dataset type not found: 'json', 'single_video', 'folder', 'image', 'motions'")
 
 
 def extend_datasets(datasets, dataset_items, extend=False):

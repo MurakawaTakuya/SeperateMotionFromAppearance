@@ -12,7 +12,6 @@ import torch
 from glob import glob
 from PIL import Image
 from itertools import islice
-from pathlib import Path
 from .bucketing import sensible_buckets
 
 decord.bridge.set_bridge('torch')
@@ -226,7 +225,7 @@ class VideoJsonDataset(Dataset):
 
             return video, prompt, prompt_ids
 
-         # Assign train data
+        # Assign train data
         train_data = self.train_data[index]
 
         # Get the frame of the current index.
@@ -246,7 +245,8 @@ class VideoJsonDataset(Dataset):
         return video, prompt, prompt_ids
 
     @staticmethod
-    def __getname__(): return 'json'
+    def __getname__():
+        return 'json'
 
     def __len__(self):
         if self.train_data is not None:
@@ -358,7 +358,8 @@ class SingleVideoDataset(Dataset):
             raise ValueError(f"Single video is not a video type. Types: {self.vid_types}")
 
     @staticmethod
-    def __getname__(): return 'single_video'
+    def __getname__():
+        return 'single_video'
 
     def __len__(self):
 
@@ -425,7 +426,7 @@ class ImageDataset(Dataset):
 
         try:
             img = torchvision.io.read_image(img, mode=torchvision.io.ImageReadMode.RGB)
-        except:
+        except Exception:
             img = T.transforms.PILToTensor()(Image.open(img).convert("RGB"))
 
         width = self.width
@@ -452,7 +453,8 @@ class ImageDataset(Dataset):
         return img, prompt, prompt_ids
 
     @staticmethod
-    def __getname__(): return 'image'
+    def __getname__():
+        return 'image'
 
     def __len__(self):
         # Image directory
@@ -548,7 +550,8 @@ class VideoFolderDataset(Dataset):
         ).input_ids
 
     @staticmethod
-    def __getname__(): return 'folder'
+    def __getname__():
+        return 'folder'
 
     def __len__(self):
         return len(self.video_files)
@@ -562,6 +565,139 @@ class VideoFolderDataset(Dataset):
         prompt_ids = self.get_prompt_ids(prompt)
 
         return {"pixel_values": (video[0] / 127.5 - 1.0), "prompt_ids": prompt_ids[0], "text_prompt": prompt, 'dataset': self.__getname__()}
+
+
+class MotionDataset(Dataset):
+    def __init__(
+        self,
+        tokenizer=None,
+        width: int = 256,
+        height: int = 256,
+        n_sample_frames: int = 16,
+        fps: int = 8,
+        path: str = "./data",
+        fallback_prompt: str = "",
+        use_bucketing: bool = False,
+        verb_dictionary: list = None,
+        target_verb: list = None,
+        **kwargs
+    ):
+        self.tokenizer = tokenizer
+        self.use_bucketing = use_bucketing
+        self.fallback_prompt = fallback_prompt
+        self.width = width
+        self.height = height
+        self.n_sample_frames = n_sample_frames
+        self.fps = fps
+        self.path = path
+
+        # verb_dictionaryとtarget_verbの検証
+        if verb_dictionary is None or len(verb_dictionary) == 0:
+            raise ValueError("verb_dictionary must be provided and not empty for motion dataset")
+        if target_verb is None or len(target_verb) == 0:
+            raise ValueError("target_verb must be provided and not empty for motion dataset")
+
+        self.verb_dictionary = verb_dictionary
+        self.target_verb = target_verb
+
+        # 各verbディレクトリの動画ファイルを収集
+        self.verb_video_files = {}
+        for verb in self.verb_dictionary:
+            verb_path = os.path.join(self.path, verb)
+            if not os.path.exists(verb_path):
+                raise ValueError(f"Verb directory not found: {verb_path}")
+
+            video_files = (glob(f"{verb_path}/*.mp4") + glob(f"{verb_path}/*.avi") +
+                           glob(f"{verb_path}/*.mov") + glob(f"{verb_path}/*.webm") +
+                           glob(f"{verb_path}/*.flv") + glob(f"{verb_path}/*.mjpeg"))
+
+            if len(video_files) == 0:
+                raise ValueError(f"No video files found in verb directory: {verb_path}")
+
+            self.verb_video_files[verb] = video_files
+
+        print(f"MotionDataset initialized with {len(self.verb_dictionary)} verbs:")
+        for verb, files in self.verb_video_files.items():
+            print(f"  {verb}: {len(files)} videos")
+
+    def get_frame_buckets(self, vr):
+        h, w, c = vr[0].shape
+        width, height = sensible_buckets(self.width, self.height, w, h)
+        resize = T.transforms.Resize((height, width), antialias=True)
+        return resize
+
+    def get_frame_batch(self, vr, resize=None):
+        n_sample_frames = self.n_sample_frames
+        native_fps = vr.get_avg_fps()
+
+        every_nth_frame = max(1, round(native_fps / self.fps))
+        every_nth_frame = min(len(vr), every_nth_frame)
+
+        effective_length = len(vr) // every_nth_frame
+        if effective_length < n_sample_frames:
+            n_sample_frames = effective_length
+
+        effective_idx = random.randint(0, (effective_length - n_sample_frames))
+        idxs = every_nth_frame * np.arange(effective_idx, effective_idx + n_sample_frames)
+
+        video = vr.get_batch(idxs)
+        video = rearrange(video, "f h w c -> f c h w")
+
+        if resize is not None:
+            video = resize(video)
+        return video, vr
+
+    def process_video_wrapper(self, vid_path):
+        video, vr = process_video(
+            vid_path,
+            self.use_bucketing,
+            self.width,
+            self.height,
+            self.get_frame_buckets,
+            self.get_frame_batch
+        )
+        return video, vr
+
+    def get_prompt_ids(self, prompt):
+        return self.tokenizer(
+            prompt,
+            truncation=True,
+            padding="max_length",
+            max_length=self.tokenizer.model_max_length,
+            return_tensors="pt",
+        ).input_ids
+
+    @staticmethod
+    def __getname__():
+        return 'motions'
+
+    def __len__(self):
+        # verb_dictionaryの数だけ返す（各stepで異なるverbを選択）
+        return len(self.verb_dictionary)
+
+    def __getitem__(self, index):
+        # indexに対応するverbを選択
+        selected_verb = self.verb_dictionary[index]
+
+        # そのverbディレクトリからランダムに動画を選択
+        available_videos = self.verb_video_files[selected_verb]
+        selected_video = random.choice(available_videos)
+
+        video, _ = self.process_video_wrapper(selected_video)
+
+        # プロンプトを生成（verb名を使用）
+        prompt = f"A person is {selected_verb}ing."
+
+        prompt_ids = self.get_prompt_ids(prompt)
+
+        return {
+            "pixel_values": (video[0] / 127.5 - 1.0),
+            "prompt_ids": prompt_ids[0],
+            "text_prompt": prompt,
+            'dataset': self.__getname__(),
+            'selected_verb': selected_verb,
+            'selected_video': selected_video
+        }
 
 
 class CachedDataset(Dataset):

@@ -43,7 +43,9 @@ def save_pipe(
         unet_target_replace_module=None,
         text_target_replace_module=None,
         is_checkpoint=False,
-        save_pretrained_model=True
+        save_pretrained_model=True,
+        verb_dictionary=None,
+        is_motion_dataset=False
 ):
     """Save pipeline with LoRA weights."""
     if is_checkpoint:
@@ -68,8 +70,23 @@ def save_pipe(
         vae=vae,
     ).to(torch_dtype=torch.float32)
 
-    lora_manager_spatial.save_lora_weights(model=copy.deepcopy(
-        pipeline), save_path=save_path + '/spatial', step=global_step)
+    # Save LoRA weights
+    if is_motion_dataset and verb_dictionary is not None and isinstance(lora_manager_spatial, list):
+        # For motion dataset, save each verb's LoRA separately
+        for i, verb in enumerate(verb_dictionary):
+            if i < len(lora_manager_spatial):
+                verb_save_path = save_path + f'/spatial_{verb}'
+                lora_manager_spatial[i].save_lora_weights(
+                    model=copy.deepcopy(pipeline),
+                    save_path=verb_save_path,
+                    step=global_step
+                )
+    else:
+        # For regular dataset, save spatial LoRA normally
+        if lora_manager_spatial is not None:
+            lora_manager_spatial.save_lora_weights(model=copy.deepcopy(
+                pipeline), save_path=save_path + '/spatial', step=global_step)
+
     if lora_manager_temporal is not None:
         lora_manager_temporal.save_lora_weights(model=copy.deepcopy(
             pipeline), save_path=save_path + '/temporal', step=global_step)

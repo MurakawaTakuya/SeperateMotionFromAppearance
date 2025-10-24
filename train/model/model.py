@@ -235,6 +235,22 @@ class TextToVideoModel:
         else:
             self.train_dataset = torch.utils.data.ConcatDataset(self.train_datasets)
 
+        # Check if this is a motion dataset
+        self.is_motion_dataset = False
+        self.verb_dictionary = None
+        # Single Motion Dataset
+        if hasattr(self.train_dataset, '__getname__') and self.train_dataset.__getname__() == 'motions':
+            self.is_motion_dataset = True
+            self.verb_dictionary = self.train_dataset.verb_dictionary
+        # Multiple Datasets
+        elif hasattr(self.train_dataset, 'datasets'):
+            # For ConcatDataset, check if any dataset is motion
+            for dataset in self.train_dataset.datasets:
+                if hasattr(dataset, '__getname__') and dataset.__getname__() == 'motions':
+                    self.is_motion_dataset = True
+                    self.verb_dictionary = dataset.verb_dictionary
+                    break
+
         # Setup LoRA components
         extra_text_encoder_params = self.extra_unet_params if self.extra_unet_params is not None else {}
 
@@ -557,6 +573,9 @@ class TextToVideoModel:
         """Handle checkpoint saving and validation"""
         # Save checkpoint
         if global_step % self.checkpointing_steps == 0 and global_step > 0:
+            # For motion dataset, pass the list of lora_managers_spatial
+            lora_managers_to_save = self.lora_managers_spatial if self.is_motion_dataset else (self.lora_managers_spatial[0] if self.lora_managers_spatial else None)
+
             save_pipe(
                 self.pretrained_model_path,
                 global_step,
@@ -565,12 +584,14 @@ class TextToVideoModel:
                 self.text_encoder,
                 self.vae,
                 self.output_dir,
-                self.lora_managers_spatial[0] if self.lora_managers_spatial else None,
+                lora_managers_to_save,
                 self.lora_manager_temporal,
                 self.unet_lora_modules,
                 self.text_encoder_lora_modules,
                 is_checkpoint=True,
-                save_pretrained_model=self.save_pretrained_model
+                save_pretrained_model=self.save_pretrained_model,
+                verb_dictionary=self.verb_dictionary,
+                is_motion_dataset=self.is_motion_dataset
             )
 
         # Validation sampling
@@ -581,6 +602,9 @@ class TextToVideoModel:
         """Save final model"""
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
+            # For motion dataset, pass the list of lora_managers_spatial
+            lora_managers_to_save = self.lora_managers_spatial if self.is_motion_dataset else (self.lora_managers_spatial[0] if self.lora_managers_spatial else None)
+
             save_pipe(
                 self.pretrained_model_path,
                 global_step,
@@ -589,12 +613,14 @@ class TextToVideoModel:
                 self.text_encoder,
                 self.vae,
                 self.output_dir,
-                self.lora_managers_spatial[0] if self.lora_managers_spatial else None,
+                lora_managers_to_save,
                 self.lora_manager_temporal,
                 self.unet_lora_modules,
                 self.text_encoder_lora_modules,
                 is_checkpoint=False,
-                save_pretrained_model=self.save_pretrained_model
+                save_pretrained_model=self.save_pretrained_model,
+                verb_dictionary=self.verb_dictionary,
+                is_motion_dataset=self.is_motion_dataset
             )
 
     def _run_validation(self, global_step, batch, text_prompt):
@@ -613,8 +639,26 @@ class TextToVideoModel:
                 # Extract and scale LoRA modules
                 loras = extract_lora_child_module(
                     self.unet, target_replace_module=["Transformer2DModel"])
-                for lora_i in loras:
-                    lora_i.scale = self.validation_data.spatial_scale
+
+                if self.is_motion_dataset:
+                    # TODO: validationの時の生成方法を変更する
+                    # For motion dataset, we can either:
+                    # 1. Use all LoRAs combined (current approach)
+                    # 2. Use specific verb LoRAs based on prompt
+                    # 3. Use a subset of LoRAs
+
+                    # Option 1: Use all LoRAs combined (default behavior)
+                    for lora_i in loras:
+                        lora_i.scale = self.validation_data.spatial_scale
+
+                    # Option 2: Use specific verb LoRAs (uncomment to enable)
+                    # This would require analyzing the prompt to determine which verb to use
+                    # For now, we'll use all LoRAs combined
+
+                else:
+                    # For regular dataset, use normal scaling
+                    for lora_i in loras:
+                        lora_i.scale = self.validation_data.spatial_scale
 
                 # Setup noise
                 if self.validation_data.noise_prior > 0:

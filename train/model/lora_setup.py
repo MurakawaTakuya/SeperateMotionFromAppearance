@@ -84,8 +84,13 @@ def setup_lora_components(
     if single_spatial_lora:
         spatial_lora_num = 1
     else:
-        # one spatial lora for each video
-        spatial_lora_num = train_dataset.__len__()
+        # Check if this is a motion dataset
+        if hasattr(train_dataset, '__getname__') and train_dataset.__getname__() == 'motions':
+            # For motion dataset, one spatial lora for each verb
+            spatial_lora_num = train_dataset.__len__()
+        else:
+            # one spatial lora for each video
+            spatial_lora_num = train_dataset.__len__()
 
     lora_managers_spatial = []
     unet_lora_params_spatial_list = []
