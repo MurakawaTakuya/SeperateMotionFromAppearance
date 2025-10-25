@@ -72,8 +72,8 @@ train_data:
     # - "cartwheel"
     - "dive"
     # - "handstand"
-    # - "jump"
-    - "run"
+    - "jump"
+    # - "run"
     # - "somersault"
     # - "stand"
     # - "throw"
@@ -96,6 +96,8 @@ validation_data:
   prompt:
     - "A man is diving at the coast"
     - "A panda is diving at the coast"
+    - "A man is jumping at the coast"
+    - "A panda is jumping at the coast"
 
   # Whether or not to sample preview during training (Requires more VRAM).
   sample_preview: True
@@ -146,7 +148,7 @@ mixed_precision: "fp16"
 
 # Trades VRAM usage for speed. You lose roughly 20% of training speed, but save a lot of VRAM.
 # If you need to save more VRAM, it can also be enabled for the text encoder, but reduces speed x2.
-gradient_checkpointing: True
+gradient_checkpointing: False
 text_encoder_gradient_checkpointing: False
 
 # Xformers must be installed for best memory savings and performance (< Pytorch 2.0)

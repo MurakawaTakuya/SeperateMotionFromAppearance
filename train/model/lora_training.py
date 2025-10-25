@@ -186,7 +186,7 @@ def train_lora_unet(
         loras = extract_lora_child_module(unet, target_replace_module=[
                                           "TransformerTemporalModel"])
 
-        print(f"temporal_lora_num: {temporal_lora_num}, spatial_lora_num: {spatial_lora_num}")
+        # print(f"temporal_lora_num: {temporal_lora_num}, spatial_lora_num: {spatial_lora_num}")
         if is_motion_dataset:
             # For motion dataset, enable only the specific verb's temporal LoRA
             for lora_i in loras:

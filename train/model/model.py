@@ -608,10 +608,44 @@ class TextToVideoModel:
 
         return train_loss_spatial, train_loss_temporal
 
+    def _save_verb_mapping(self, global_step):
+        """Save verb to LoRA index mapping for motion dataset"""
+        import json
+
+        # Convert ListConfig to regular Python list if needed
+        verb_dictionary = list(self.verb_dictionary) if hasattr(self.verb_dictionary, '__iter__') else self.verb_dictionary
+
+        # Create verb mapping
+        verb_mapping = {
+            "dataset_type": "motion",
+            "verb_dictionary": verb_dictionary,
+            "temporal_lora_mapping": {
+                verb: idx for idx, verb in enumerate(verb_dictionary)
+            },
+            "spatial_lora_count": self.spatial_lora_num,
+            "temporal_lora_count": len(verb_dictionary)
+        }
+
+        # Save to output directory
+        mapping_path = os.path.join(self.output_dir, "verb_mapping.json")
+        with open(mapping_path, 'w') as f:
+            json.dump(verb_mapping, f, indent=2)
+
+        # Also save to checkpoint directory
+        checkpoint_path = os.path.join(self.output_dir, f"checkpoint-{global_step}")
+        os.makedirs(checkpoint_path, exist_ok=True)
+        checkpoint_mapping_path = os.path.join(checkpoint_path, "verb_mapping.json")
+        with open(checkpoint_mapping_path, 'w') as f:
+            json.dump(verb_mapping, f, indent=2)
+
     def _checkpoint_and_validation(self, global_step, batch, text_prompt):
         """Handle checkpoint saving and validation"""
         # Save checkpoint
         if global_step % self.checkpointing_steps == 0 and global_step > 0:
+            # Save verb mapping for motion dataset
+            if self.is_motion_dataset and self.verb_dictionary is not None:
+                self._save_verb_mapping(global_step)
+
             # Pass the lora_managers (can be lists for motion dataset)
             save_pipe(
                 self.pretrained_model_path,
@@ -639,6 +673,10 @@ class TextToVideoModel:
         """Save final model"""
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
+            # Save verb mapping for motion dataset
+            if self.is_motion_dataset and self.verb_dictionary is not None:
+                self._save_verb_mapping(global_step)
+
             # Pass the lora_managers (can be lists for motion dataset)
             save_pipe(
                 self.pretrained_model_path,
