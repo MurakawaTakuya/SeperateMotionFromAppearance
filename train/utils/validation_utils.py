@@ -71,25 +71,27 @@ def save_pipe(
     ).to(torch_dtype=torch.float32)
 
     # Save LoRA weights
-    if is_motion_dataset and verb_dictionary is not None and isinstance(lora_manager_spatial, list):
-        # For motion dataset, save each verb's LoRA separately
-        for i, verb in enumerate(verb_dictionary):
-            if i < len(lora_manager_spatial):
-                verb_save_path = save_path + f'/spatial_{verb}'
-                lora_manager_spatial[i].save_lora_weights(
-                    model=copy.deepcopy(pipeline),
-                    save_path=verb_save_path,
-                    step=global_step
-                )
-    else:
-        # For regular dataset, save spatial LoRA normally
-        if lora_manager_spatial is not None:
+    # For all datasets, save spatial LoRA normally
+    if lora_manager_spatial is not None:
+        if isinstance(lora_manager_spatial, list):
+            # For motion dataset with multiple spatial LoRAs, save the first one (or combine them)
+            lora_manager_spatial[0].save_lora_weights(model=copy.deepcopy(
+                pipeline), save_path=save_path + '/spatial', step=global_step)
+        else:
+            # For regular dataset, save spatial LoRA normally
             lora_manager_spatial.save_lora_weights(model=copy.deepcopy(
                 pipeline), save_path=save_path + '/spatial', step=global_step)
 
+    # For all datasets, save temporal LoRA normally
     if lora_manager_temporal is not None:
-        lora_manager_temporal.save_lora_weights(model=copy.deepcopy(
-            pipeline), save_path=save_path + '/temporal', step=global_step)
+        if isinstance(lora_manager_temporal, list):
+            # For motion dataset with multiple temporal LoRAs, save the first one (or combine them)
+            lora_manager_temporal[0].save_lora_weights(model=copy.deepcopy(
+                pipeline), save_path=save_path + '/temporal', step=global_step)
+        else:
+            # For regular dataset, save temporal LoRA normally
+            lora_manager_temporal.save_lora_weights(model=copy.deepcopy(
+                pipeline), save_path=save_path + '/temporal', step=global_step)
 
     if save_pretrained_model:
         pipeline.save_pretrained(save_path)

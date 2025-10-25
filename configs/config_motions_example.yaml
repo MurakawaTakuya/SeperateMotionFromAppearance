@@ -61,23 +61,24 @@ train_data:
   path: "train_data/HMDB51_and_Activity_net/"
 
   # The prompt when using a single video file
-  # TODO: change
+  # Thsi prompt is not used for motion dataset
+  # TODO: change, verbごとに指定できるようにする
   fallback_prompt: "A person is diving to the water."
 
   # Verb Dictionary - List of action verbs for training
   # TODO: この項目を使用
   # TODO: ここにそれぞれ必要ならプロンプト入れるか、パスいれるかする
   verb_dictionary:
-    - "cartwheel"
+    # - "cartwheel"
     - "dive"
-    - "handstand"
-    - "jump"
+    # - "handstand"
+    # - "jump"
     - "run"
-    - "somersault"
-    - "stand"
-    - "throw"
-    - "turn"
-    - "walk"
+    # - "somersault"
+    # - "stand"
+    # - "throw"
+    # - "turn"
+    # - "walk"
 
   target_verb:
     - "Discus throw"

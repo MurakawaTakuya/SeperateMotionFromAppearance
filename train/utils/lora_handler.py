@@ -10,8 +10,6 @@ from .lora import (
     extract_lora_ups_down,
     inject_trainable_lora_extended,
     save_lora_weight,
-    train_patch_pipe,
-    monkeypatch_or_replace_lora,
     monkeypatch_or_replace_lora_extended
 )
 
@@ -232,11 +230,12 @@ class LoraHandler(object):
         params = model if params is None else params
         return params, negation
 
-    def save_cloneofsimo_lora(self, model, save_path, step, flag):
+    def save_cloneofsimo_lora(self, model, save_path, step, flag, verb_index=None, total_verbs=None):
 
-        def save_lora(model, name, condition, replace_modules, step, save_path, flag=None):
+        def save_lora(model, name, condition, replace_modules, step, save_path, flag=None, verb_index=None, total_verbs=None):
             if condition and replace_modules is not None:
                 save_path = f"{save_path}/{step}_{name}.pt"
+                # Save all LoRA (original behavior)
                 save_lora_weight(model, save_path, replace_modules, flag)
 
         save_lora(
@@ -246,7 +245,9 @@ class LoraHandler(object):
             self.unet_replace_modules,
             step,
             save_path,
-            flag
+            flag,
+            verb_index,
+            total_verbs
         )
         save_lora(
             model.text_encoder,
@@ -255,12 +256,14 @@ class LoraHandler(object):
             self.text_encoder_replace_modules,
             step,
             save_path,
-            flag
+            flag,
+            verb_index,
+            total_verbs
         )
 
         # train_patch_pipe(model, self.use_unet_lora, self.use_text_lora)
 
-    def save_lora_weights(self, model: None, save_path: str = '', step: str = '', flag=None):
+    def save_lora_weights(self, model: None, save_path: str = '', step: str = '', flag=None, verb_index=None, total_verbs=None):
         save_path = f"{save_path}/lora"
         os.makedirs(save_path, exist_ok=True)
 
@@ -272,4 +275,4 @@ class LoraHandler(object):
                     Only 'stable_lora' is supported for saving to a compatible webui file.
                     """
                 )
-            self.save_cloneofsimo_lora(model, save_path, step, flag)
+            self.save_cloneofsimo_lora(model, save_path, step, flag, verb_index, total_verbs)

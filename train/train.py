@@ -80,6 +80,7 @@ def main(
     if dataset_types is None:
         dataset_types = ('json',)
 
+    # TODO: モデル名変える
     model = TextToVideoModel(
         pretrained_model_path=pretrained_model_path,
         output_dir=output_dir,

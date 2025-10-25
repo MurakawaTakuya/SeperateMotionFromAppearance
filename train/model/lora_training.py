@@ -37,6 +37,9 @@ def train_lora_unet(
     random_hflip_img,
     mask_spatial_lora=False,
     mask_temporal_lora=False,
+    is_motion_dataset=False,
+    temporal_lora_num=None,
+    verb_dictionary=None,
     **kwargs
 ):
     """
@@ -140,9 +143,12 @@ def train_lora_unet(
             for lora_idx in range(0, len(loras), spatial_lora_num):
                 loras[lora_idx + step].scale = 1.
 
+        # Handle temporal LoRA scaling for motion dataset
         loras = extract_lora_child_module(unet, target_replace_module=[
                                           "TransformerTemporalModel"])
         if len(loras) > 0:
+            # Disable all temporal LoRAs during spatial training
+            # The specific temporal LoRA will be enabled in the temporal loss section
             for lora_i in loras:
                 lora_i.scale = 0.
 
@@ -179,8 +185,38 @@ def train_lora_unet(
     else:
         loras = extract_lora_child_module(unet, target_replace_module=[
                                           "TransformerTemporalModel"])
-        for lora_i in loras:
-            lora_i.scale = 1.
+
+        print(f"temporal_lora_num: {temporal_lora_num}, spatial_lora_num: {spatial_lora_num}")
+        if is_motion_dataset:
+            # For motion dataset, enable only the specific verb's temporal LoRA
+            for lora_i in loras:
+                lora_i.scale = 0.
+
+            # Enable only the current step's temporal LoRA
+            # TODO: 重み付けの場合はここでLoRAのscaleを変更する
+            if temporal_lora_num is not None:
+                # Get the actual verb from the batch
+                if 'selected_verb' in batch and verb_dictionary is not None and batch['selected_verb'] in verb_dictionary:
+                    verb_index = verb_dictionary.index(batch['selected_verb'])
+                    for lora_idx in range(0, len(loras), temporal_lora_num):
+                        if lora_idx + verb_index < len(loras):
+                            loras[lora_idx + verb_index].scale = 1.
+                else:
+                    # Fallback: use step % temporal_lora_num to cycle through verbs
+                    verb_index = step % temporal_lora_num
+                    for lora_idx in range(0, len(loras), temporal_lora_num):
+                        if lora_idx + verb_index < len(loras):
+                            loras[lora_idx + verb_index].scale = 1.
+            else:
+                # Fallback: use spatial_lora_num if temporal_lora_num is not provided
+                for lora_idx in range(0, len(loras), spatial_lora_num):
+                    if lora_idx + step < len(loras):
+                        loras[lora_idx + step].scale = 1.
+        else:
+            # For regular dataset, enable all temporal LoRAs
+            for lora_i in loras:
+                lora_i.scale = 1.
+
         model_pred = unet(noisy_latents, timesteps,
                           encoder_hidden_states=encoder_hidden_states).sample
         loss_temporal = F.mse_loss(

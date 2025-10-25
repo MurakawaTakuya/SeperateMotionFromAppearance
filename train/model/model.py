@@ -507,10 +507,21 @@ class TextToVideoModel:
             optimizer_spatial.zero_grad(set_to_none=True)
 
         if self.optimizer_temporal is not None:
-            self.optimizer_temporal.zero_grad(set_to_none=True)
+            if self.is_motion_dataset and isinstance(self.optimizer_temporal, list):
+                # For motion dataset, zero grad for all temporal optimizers
+                for optimizer_temporal in self.optimizer_temporal:
+                    optimizer_temporal.zero_grad(set_to_none=True)
+            else:
+                # For regular dataset, zero grad for single temporal optimizer
+                self.optimizer_temporal.zero_grad(set_to_none=True)
 
         # Forward pass
         with self.accelerator.autocast():
+            # Calculate temporal_lora_num for motion dataset
+            temporal_lora_num = None
+            if self.is_motion_dataset and hasattr(self.train_dataset, 'verb_dictionary'):
+                temporal_lora_num = len(self.train_dataset.verb_dictionary)
+
             loss_spatial, loss_temporal, _, _ = train_lora_unet(
                 batch=batch,
                 step=step,
@@ -529,6 +540,9 @@ class TextToVideoModel:
                 random_hflip_img=self.random_hflip_img,
                 mask_spatial_lora=mask_spatial_lora,
                 mask_temporal_lora=mask_temporal_lora,
+                is_motion_dataset=self.is_motion_dataset,
+                temporal_lora_num=temporal_lora_num,
+                verb_dictionary=self.verb_dictionary,
                 **self.kwargs
             )
 
@@ -542,15 +556,40 @@ class TextToVideoModel:
 
         if not mask_temporal_lora and self.train_temporal_lora:
             self.accelerator.backward(loss_temporal)
-            self.optimizer_temporal.step()
+            if self.is_motion_dataset and isinstance(self.optimizer_temporal, list):
+                # For motion dataset, update only the specific verb's temporal LoRA
+                # Get the actual verb from the batch
+                if 'selected_verb' in batch and batch['selected_verb'] in self.verb_dictionary:
+                    verb_index = self.verb_dictionary.index(batch['selected_verb'])
+                    self.optimizer_temporal[verb_index].step()
+                else:
+                    # Fallback: use step % len(optimizer_temporal) to cycle through verbs
+                    verb_index = step % len(self.optimizer_temporal)
+                    self.optimizer_temporal[verb_index].step()
+            else:
+                # For regular dataset, update single temporal LoRA
+                self.optimizer_temporal.step()
 
         # Update learning rate schedulers
         if self.spatial_lora_num == 1:
             self.lr_scheduler_spatial_list[0].step()
         else:
             self.lr_scheduler_spatial_list[step].step()
+
         if self.lr_scheduler_temporal is not None:
-            self.lr_scheduler_temporal.step()
+            if self.is_motion_dataset and isinstance(self.lr_scheduler_temporal, list):
+                # For motion dataset, update only the specific verb's temporal LoRA scheduler
+                # Get the actual verb from the batch
+                if 'selected_verb' in batch and batch['selected_verb'] in self.verb_dictionary:
+                    verb_index = self.verb_dictionary.index(batch['selected_verb'])
+                    self.lr_scheduler_temporal[verb_index].step()
+                else:
+                    # Fallback: use step % len(lr_scheduler_temporal) to cycle through verbs
+                    verb_index = step % len(self.lr_scheduler_temporal)
+                    self.lr_scheduler_temporal[verb_index].step()
+            else:
+                # For regular dataset, update single temporal LoRA scheduler
+                self.lr_scheduler_temporal.step()
 
         return loss_spatial, loss_temporal
 
@@ -573,9 +612,7 @@ class TextToVideoModel:
         """Handle checkpoint saving and validation"""
         # Save checkpoint
         if global_step % self.checkpointing_steps == 0 and global_step > 0:
-            # For motion dataset, pass the list of lora_managers_spatial
-            lora_managers_to_save = self.lora_managers_spatial if self.is_motion_dataset else (self.lora_managers_spatial[0] if self.lora_managers_spatial else None)
-
+            # Pass the lora_managers (can be lists for motion dataset)
             save_pipe(
                 self.pretrained_model_path,
                 global_step,
@@ -584,7 +621,7 @@ class TextToVideoModel:
                 self.text_encoder,
                 self.vae,
                 self.output_dir,
-                lora_managers_to_save,
+                self.lora_managers_spatial,
                 self.lora_manager_temporal,
                 self.unet_lora_modules,
                 self.text_encoder_lora_modules,
@@ -602,9 +639,7 @@ class TextToVideoModel:
         """Save final model"""
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
-            # For motion dataset, pass the list of lora_managers_spatial
-            lora_managers_to_save = self.lora_managers_spatial if self.is_motion_dataset else (self.lora_managers_spatial[0] if self.lora_managers_spatial else None)
-
+            # Pass the lora_managers (can be lists for motion dataset)
             save_pipe(
                 self.pretrained_model_path,
                 global_step,
@@ -613,7 +648,7 @@ class TextToVideoModel:
                 self.text_encoder,
                 self.vae,
                 self.output_dir,
-                lora_managers_to_save,
+                self.lora_managers_spatial,
                 self.lora_manager_temporal,
                 self.unet_lora_modules,
                 self.text_encoder_lora_modules,

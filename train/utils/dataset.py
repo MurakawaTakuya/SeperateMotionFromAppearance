@@ -672,20 +672,30 @@ class MotionDataset(Dataset):
         return 'motions'
 
     def __len__(self):
-        # verb_dictionaryの数だけ返す（各stepで異なるverbを選択）
-        return len(self.verb_dictionary)
+        # 全動画数を返す（動画ごとにLoRAを作成）
+        total_videos = sum(len(videos) for videos in self.verb_video_files.values())
+        return total_videos
 
     def __getitem__(self, index):
-        # indexに対応するverbを選択
-        selected_verb = self.verb_dictionary[index]
+        # 全動画からindex番目の動画を選択
+        video_count = 0
+        selected_verb = None
+        selected_video = None
 
-        # そのverbディレクトリからランダムに動画を選択
-        available_videos = self.verb_video_files[selected_verb]
-        selected_video = random.choice(available_videos)
+        for verb, videos in self.verb_video_files.items():
+            if video_count + len(videos) > index:
+                selected_video = videos[index - video_count]
+                selected_verb = verb
+                break
+            video_count += len(videos)
+
+        if selected_video is None:
+            raise IndexError(f"Index {index} out of range")
 
         video, _ = self.process_video_wrapper(selected_video)
 
         # プロンプトを生成（verb名を使用）
+        # TODO: ここのプロンプトをそれぞれ指定できるようにするか，改善する
         prompt = f"A person is {selected_verb}ing."
 
         prompt_ids = self.get_prompt_ids(prompt)
