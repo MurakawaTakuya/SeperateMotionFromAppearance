@@ -97,6 +97,7 @@ class TextToVideoModel:
         lora_unet_dropout: float = 0.1,
         logger_type: str = 'tensorboard',
         disable_comet: bool = False,
+        save_preview: bool = False,
         **kwargs
     ):
         # Store all parameters as instance variables
@@ -149,6 +150,7 @@ class TextToVideoModel:
         self.lora_unet_dropout = lora_unet_dropout
         self.logger_type = logger_type
         self.disable_comet = disable_comet
+        self.save_preview = save_preview
         self.kwargs = kwargs
 
         # Initialize components
@@ -213,8 +215,19 @@ class TextToVideoModel:
 
     def _setup_training_components(self):
         """Setup training datasets and LoRA components"""
+        # プレビュー保存パラメータをtrain_dataに追加
+        train_data_with_preview = self.train_data.copy()
+        if self.save_preview:
+            train_data_with_preview['save_preview'] = True
+            # プレビューディレクトリが指定されていない場合はoutput_dir/previewをデフォルトに
+            if 'preview_dir' not in train_data_with_preview:
+                train_data_with_preview['preview_dir'] = None  # Noneの場合はoutput_dir/previewが使用される
+
         # Get training datasets
-        self.train_datasets = get_train_dataset(self.dataset_types, self.train_data, self.tokenizer)
+        self.train_datasets = get_train_dataset(self.dataset_types, train_data_with_preview, self.tokenizer)
+
+        # データセットにoutput_dirを設定
+        self._set_dataset_output_dir()
 
         # Process extra training data
         try:
@@ -234,6 +247,22 @@ class TextToVideoModel:
             self.train_dataset = self.train_datasets[0]
         else:
             self.train_dataset = torch.utils.data.ConcatDataset(self.train_datasets)
+
+        # Check if this is a motion dataset
+        self.is_motion_dataset = False
+        self.verb_dictionary = None
+        # Single Motion Dataset
+        if hasattr(self.train_dataset, '__getname__') and self.train_dataset.__getname__() == 'motions':
+            self.is_motion_dataset = True
+            self.verb_dictionary = self.train_dataset.verb_dictionary
+        # Multiple Datasets
+        elif hasattr(self.train_dataset, 'datasets'):
+            # For ConcatDataset, check if any dataset is motion
+            for dataset in self.train_dataset.datasets:
+                if hasattr(dataset, '__getname__') and dataset.__getname__() == 'motions':
+                    self.is_motion_dataset = True
+                    self.verb_dictionary = dataset.verb_dictionary
+                    break
 
         # Setup LoRA components
         extra_text_encoder_params = self.extra_unet_params if self.extra_unet_params is not None else {}
@@ -391,6 +420,9 @@ class TextToVideoModel:
         with self.accelerator.accumulate(self.unet), self.accelerator.accumulate(self.text_encoder):
             text_prompt = batch['text_prompt'][0]
 
+            # データセットにステップ情報を渡す（プレビュー保存用）
+            self._update_dataset_steps(step, global_step)
+
             # Setup masking
             mask_temporal_lora, mask_spatial_lora = self._setup_masking()
 
@@ -426,6 +458,22 @@ class TextToVideoModel:
             )
 
         return global_step
+
+    def _set_dataset_output_dir(self):
+        """データセットにoutput_dirを設定する"""
+        # train_datasetsの各データセットにoutput_dirを設定
+        for dataset in self.train_datasets:
+            if hasattr(dataset, 'output_dir'):
+                dataset.output_dir = self.output_dir
+
+    def _update_dataset_steps(self, step, global_step):
+        """データセットにステップ情報を渡す（プレビュー保存用）"""
+        # train_datasetsの各データセットにステップ情報を設定
+        for dataset in self.train_datasets:
+            if hasattr(dataset, 'current_step'):
+                dataset.current_step = step
+            if hasattr(dataset, 'current_global_step'):
+                dataset.current_global_step = global_step
 
     def _log_metrics(self, metrics_dict, step):
         """Log metrics to Comet"""
@@ -491,10 +539,21 @@ class TextToVideoModel:
             optimizer_spatial.zero_grad(set_to_none=True)
 
         if self.optimizer_temporal is not None:
-            self.optimizer_temporal.zero_grad(set_to_none=True)
+            if self.is_motion_dataset and isinstance(self.optimizer_temporal, list):
+                # For motion dataset, zero grad for all temporal optimizers
+                for optimizer_temporal in self.optimizer_temporal:
+                    optimizer_temporal.zero_grad(set_to_none=True)
+            else:
+                # For regular dataset, zero grad for single temporal optimizer
+                self.optimizer_temporal.zero_grad(set_to_none=True)
 
         # Forward pass
         with self.accelerator.autocast():
+            # Calculate temporal_lora_num for motion dataset
+            temporal_lora_num = None
+            if self.is_motion_dataset and hasattr(self.train_dataset, 'verb_dictionary'):
+                temporal_lora_num = len(self.train_dataset.verb_dictionary)
+
             loss_spatial, loss_temporal, _, _ = train_lora_unet(
                 batch=batch,
                 step=step,
@@ -513,6 +572,9 @@ class TextToVideoModel:
                 random_hflip_img=self.random_hflip_img,
                 mask_spatial_lora=mask_spatial_lora,
                 mask_temporal_lora=mask_temporal_lora,
+                is_motion_dataset=self.is_motion_dataset,
+                temporal_lora_num=temporal_lora_num,
+                verb_dictionary=self.verb_dictionary,
                 **self.kwargs
             )
 
@@ -526,15 +588,40 @@ class TextToVideoModel:
 
         if not mask_temporal_lora and self.train_temporal_lora:
             self.accelerator.backward(loss_temporal)
-            self.optimizer_temporal.step()
+            if self.is_motion_dataset and isinstance(self.optimizer_temporal, list):
+                # For motion dataset, update only the specific verb's temporal LoRA
+                # Get the actual verb from the batch
+                if 'selected_verb' in batch and batch['selected_verb'] in self.verb_dictionary:
+                    verb_index = self.verb_dictionary.index(batch['selected_verb'])
+                    self.optimizer_temporal[verb_index].step()
+                else:
+                    # Fallback: use step % len(optimizer_temporal) to cycle through verbs
+                    verb_index = step % len(self.optimizer_temporal)
+                    self.optimizer_temporal[verb_index].step()
+            else:
+                # For regular dataset, update single temporal LoRA
+                self.optimizer_temporal.step()
 
         # Update learning rate schedulers
         if self.spatial_lora_num == 1:
             self.lr_scheduler_spatial_list[0].step()
         else:
             self.lr_scheduler_spatial_list[step].step()
+
         if self.lr_scheduler_temporal is not None:
-            self.lr_scheduler_temporal.step()
+            if self.is_motion_dataset and isinstance(self.lr_scheduler_temporal, list):
+                # For motion dataset, update only the specific verb's temporal LoRA scheduler
+                # Get the actual verb from the batch
+                if 'selected_verb' in batch and batch['selected_verb'] in self.verb_dictionary:
+                    verb_index = self.verb_dictionary.index(batch['selected_verb'])
+                    self.lr_scheduler_temporal[verb_index].step()
+                else:
+                    # Fallback: use step % len(lr_scheduler_temporal) to cycle through verbs
+                    verb_index = step % len(self.lr_scheduler_temporal)
+                    self.lr_scheduler_temporal[verb_index].step()
+            else:
+                # For regular dataset, update single temporal LoRA scheduler
+                self.lr_scheduler_temporal.step()
 
         return loss_spatial, loss_temporal
 
@@ -553,10 +640,45 @@ class TextToVideoModel:
 
         return train_loss_spatial, train_loss_temporal
 
+    def _save_verb_mapping(self, global_step):
+        """Save verb to LoRA index mapping for motion dataset"""
+        import json
+
+        # Convert ListConfig to regular Python list if needed
+        verb_dictionary = list(self.verb_dictionary) if hasattr(self.verb_dictionary, '__iter__') else self.verb_dictionary
+
+        # Create verb mapping
+        verb_mapping = {
+            "dataset_type": "motion",
+            "verb_dictionary": verb_dictionary,
+            "temporal_lora_mapping": {
+                verb: idx for idx, verb in enumerate(verb_dictionary)
+            },
+            "spatial_lora_count": self.spatial_lora_num,
+            "temporal_lora_count": len(verb_dictionary)
+        }
+
+        # Save to output directory
+        mapping_path = os.path.join(self.output_dir, "verb_mapping.json")
+        with open(mapping_path, 'w') as f:
+            json.dump(verb_mapping, f, indent=2)
+
+        # Also save to checkpoint directory
+        checkpoint_path = os.path.join(self.output_dir, f"checkpoint-{global_step}")
+        os.makedirs(checkpoint_path, exist_ok=True)
+        checkpoint_mapping_path = os.path.join(checkpoint_path, "verb_mapping.json")
+        with open(checkpoint_mapping_path, 'w') as f:
+            json.dump(verb_mapping, f, indent=2)
+
     def _checkpoint_and_validation(self, global_step, batch, text_prompt):
         """Handle checkpoint saving and validation"""
         # Save checkpoint
         if global_step % self.checkpointing_steps == 0 and global_step > 0:
+            # Save verb mapping for motion dataset
+            if self.is_motion_dataset and self.verb_dictionary is not None:
+                self._save_verb_mapping(global_step)
+
+            # Pass the lora_managers (can be lists for motion dataset)
             save_pipe(
                 self.pretrained_model_path,
                 global_step,
@@ -565,12 +687,14 @@ class TextToVideoModel:
                 self.text_encoder,
                 self.vae,
                 self.output_dir,
-                self.lora_managers_spatial[0] if self.lora_managers_spatial else None,
+                self.lora_managers_spatial,
                 self.lora_manager_temporal,
                 self.unet_lora_modules,
                 self.text_encoder_lora_modules,
                 is_checkpoint=True,
-                save_pretrained_model=self.save_pretrained_model
+                save_pretrained_model=self.save_pretrained_model,
+                verb_dictionary=self.verb_dictionary,
+                is_motion_dataset=self.is_motion_dataset
             )
 
         # Validation sampling
@@ -581,6 +705,11 @@ class TextToVideoModel:
         """Save final model"""
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
+            # Save verb mapping for motion dataset
+            if self.is_motion_dataset and self.verb_dictionary is not None:
+                self._save_verb_mapping(global_step)
+
+            # Pass the lora_managers (can be lists for motion dataset)
             save_pipe(
                 self.pretrained_model_path,
                 global_step,
@@ -589,12 +718,14 @@ class TextToVideoModel:
                 self.text_encoder,
                 self.vae,
                 self.output_dir,
-                self.lora_managers_spatial[0] if self.lora_managers_spatial else None,
+                self.lora_managers_spatial,
                 self.lora_manager_temporal,
                 self.unet_lora_modules,
                 self.text_encoder_lora_modules,
                 is_checkpoint=False,
-                save_pretrained_model=self.save_pretrained_model
+                save_pretrained_model=self.save_pretrained_model,
+                verb_dictionary=self.verb_dictionary,
+                is_motion_dataset=self.is_motion_dataset
             )
 
     def _run_validation(self, global_step, batch, text_prompt):
@@ -613,8 +744,26 @@ class TextToVideoModel:
                 # Extract and scale LoRA modules
                 loras = extract_lora_child_module(
                     self.unet, target_replace_module=["Transformer2DModel"])
-                for lora_i in loras:
-                    lora_i.scale = self.validation_data.spatial_scale
+
+                if self.is_motion_dataset:
+                    # TODO: validationの時の生成方法を変更する
+                    # For motion dataset, we can either:
+                    # 1. Use all LoRAs combined (current approach)
+                    # 2. Use specific verb LoRAs based on prompt
+                    # 3. Use a subset of LoRAs
+
+                    # Option 1: Use all LoRAs combined (default behavior)
+                    for lora_i in loras:
+                        lora_i.scale = self.validation_data.spatial_scale
+
+                    # Option 2: Use specific verb LoRAs (uncomment to enable)
+                    # This would require analyzing the prompt to determine which verb to use
+                    # For now, we'll use all LoRAs combined
+
+                else:
+                    # For regular dataset, use normal scaling
+                    for lora_i in loras:
+                        lora_i.scale = self.validation_data.spatial_scale
 
                 # Setup noise
                 if self.validation_data.noise_prior > 0:

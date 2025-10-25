@@ -85,6 +85,8 @@ def initialize_pipeline(
     lora_path: str = "",
     lora_rank: int = 64,
     lora_scale: float = 1.0,
+    verb_mapping: dict = None,
+    motion: str = None,
 ):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -98,19 +100,56 @@ def initialize_pipeline(
     # Enable xformers if available
     handle_memory_attention(xformers, sdp, unet)
 
-    lora_manager_temporal = LoraHandler(
-        version="cloneofsimo",
-        use_unet_lora=True,
-        use_text_lora=False,
-        save_for_webui=False,
-        only_for_webui=False,
-        unet_replace_modules=["TransformerTemporalModel"],
-        text_encoder_replace_modules=None,
-        lora_bias=None
-    )
+    # Handle multiple LoRAs for motion dataset
+    if verb_mapping and verb_mapping.get("dataset_type") == "motion":
+        # For motion dataset, inject multiple temporal LoRAs
+        temporal_lora_count = verb_mapping.get("temporal_lora_count", 1)
+        lora_managers_temporal = []
 
-    unet_lora_params, unet_negation = lora_manager_temporal.add_lora_to_model(
-        True, unet, lora_manager_temporal.unet_replace_modules, 0, lora_path, r=lora_rank, scale=lora_scale)
+        for i in range(temporal_lora_count):
+            lora_manager_temporal = LoraHandler(
+                version="cloneofsimo",
+                use_unet_lora=True,
+                use_text_lora=False,
+                save_for_webui=False,
+                only_for_webui=False,
+                unet_replace_modules=["TransformerTemporalModel"],
+                text_encoder_replace_modules=None,
+                lora_bias=None
+            )
+
+            # Use the specific temporal LoRA path for this verb
+            verb_lora_path = lora_path.replace("/temporal/lora", f"/temporal_{i}/lora")
+            unet_lora_params, unet_negation = lora_manager_temporal.add_lora_to_model(
+                True, unet, lora_manager_temporal.unet_replace_modules, 0, verb_lora_path, r=lora_rank, scale=0.0)  # Initially disable all
+
+            lora_managers_temporal.append(lora_manager_temporal)
+
+        # Enable only the specified motion's LoRA
+        if motion and motion in verb_mapping.get("temporal_lora_mapping", {}):
+            motion_idx = verb_mapping["temporal_lora_mapping"][motion]
+            # Set scale to 1.0 for the specified motion's LoRA
+            lora_managers_temporal[motion_idx].add_lora_to_model(
+                True, unet, ["TransformerTemporalModel"], 0,
+                lora_path.replace("/temporal/lora", f"/temporal_{motion_idx}/lora"),
+                r=lora_rank, scale=lora_scale)
+        else:
+            raise ValueError(f"Motion '{motion}' not found in verb mapping. Available motions: {list(verb_mapping.get('temporal_lora_mapping', {}).keys())}")
+    else:
+        # For regular dataset, single temporal LoRA
+        lora_manager_temporal = LoraHandler(
+            version="cloneofsimo",
+            use_unet_lora=True,
+            use_text_lora=False,
+            save_for_webui=False,
+            only_for_webui=False,
+            unet_replace_modules=["TransformerTemporalModel"],
+            text_encoder_replace_modules=None,
+            lora_bias=None
+        )
+
+        unet_lora_params, unet_negation = lora_manager_temporal.add_lora_to_model(
+            True, unet, lora_manager_temporal.unet_replace_modules, 0, lora_path, r=lora_rank, scale=lora_scale)
 
     unet.eval()
     text_encoder.eval()
@@ -229,7 +268,7 @@ def inference(
     with torch.autocast(device, dtype=torch.half):
         # prepare models
         pipe = initialize_pipeline(
-            model, device, xformers, sdp, lora_path, lora_rank, lora_scale)
+            model, device, xformers, sdp, lora_path, lora_rank, lora_scale, verb_mapping, args.motion)
 
         for i in range(repeat_num):
             if seed is None:
@@ -319,6 +358,7 @@ if __name__ == "__main__":
                         help="How many results to generate with the same prompt.")
     parser.add_argument("--freeu", type=str, default='[1.1,1.,1,1]')
     parser.add_argument("--earlystep", type=int, default=333)
+    parser.add_argument("--motion", type=str, default=None, help="For motion dataset: specify which motion LoRA to use (e.g., 'cartwheel', 'dive')")
     args = parser.parse_args()
     # fmt: on
 
@@ -339,7 +379,35 @@ if __name__ == "__main__":
     # ============= sample videos =============
     # =========================================
 
-    lora_path = f"{args.checkpoint_folder}/checkpoint-{args.checkpoint_index}/temporal/lora"
+    # Load verb mapping if it exists
+    verb_mapping = None
+    mapping_path = os.path.join(args.checkpoint_folder, "verb_mapping.json")
+    if os.path.exists(mapping_path):
+        import json
+        with open(mapping_path, 'r') as f:
+            verb_mapping = json.load(f)
+
+    # Determine LoRA path and validate motion argument
+    if verb_mapping and verb_mapping.get("dataset_type") == "motion":
+        # For motion dataset, motion argument is required
+        if not args.motion:
+            raise ValueError("Motion dataset detected. Please specify --motion argument. Available motions: " +
+                             str(list(verb_mapping.get("temporal_lora_mapping", {}).keys())))
+
+        if args.motion not in verb_mapping.get("temporal_lora_mapping", {}):
+            raise ValueError(f"Motion '{args.motion}' not found. Available motions: " +
+                             str(list(verb_mapping.get("temporal_lora_mapping", {}).keys())))
+
+        # Use standard temporal path (will be modified in initialize_pipeline)
+        lora_path = f"{args.checkpoint_folder}/checkpoint-{args.checkpoint_index}/temporal/lora"
+    else:
+        # For regular dataset, motion argument should not be specified
+        if args.motion:
+            raise ValueError("Motion argument specified but this is not a motion dataset. Remove --motion argument.")
+
+        # For regular dataset, use standard temporal LoRA
+        lora_path = f"{args.checkpoint_folder}/checkpoint-{args.checkpoint_index}/temporal/lora"
+
     latents_folder = f"{args.checkpoint_folder}/cached_latents"
     latents_path = f"{latents_folder}/{random.choice(os.listdir(latents_folder))}"
     assert os.path.exists(lora_path)

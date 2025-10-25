@@ -1,0 +1,39 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Train Motions Example",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "train.train",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "justMyCode": false,
+            "args": [
+                "--config",
+                "configs/config_motions_example.yaml",
+                "--disable_comet"
+            ]
+        },
+        {
+            "name": "Train Multi Videos Skateboard",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "train.train",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "justMyCode": false,
+            "args": [
+                "--config",
+                "configs/config_multi_videos_skateboard.yaml",
+                "--disable_comet"
+            ]
+        }
+    ]
+}

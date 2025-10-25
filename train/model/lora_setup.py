@@ -12,6 +12,115 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 
+def setup_temporal_lora(
+    unet,
+    train_temporal_lora: bool,
+    train_dataset,
+    use_unet_lora: bool,
+    lora_unet_dropout: float,
+    lora_path: str,
+    lora_rank: int,
+    learning_rate: float,
+    extra_unet_params: dict,
+    adam_beta1: float,
+    adam_beta2: float,
+    adam_weight_decay: float,
+    adam_epsilon: float,
+    lr_scheduler: str,
+    lr_warmup_steps: int,
+    gradient_accumulation_steps: int,
+    max_train_steps: int,
+    optimizer_cls
+):
+    """
+    Temporal LoRAの設定を行う
+
+    Returns:
+        tuple: (lora_manager_temporal, unet_lora_params_temporal, unet_negation_temporal,
+                optimizer_temporal, lr_scheduler_temporal)
+    """
+    if not train_temporal_lora:
+        return None, [], [], None, None
+
+    # Check if this is a motion dataset
+    is_motion_dataset = (hasattr(train_dataset, '__getname__') and
+                         train_dataset.__getname__() == 'motions')
+
+    if is_motion_dataset:
+        # For motion dataset, create temporal LoRA for each verb
+        temporal_lora_num = len(train_dataset.verb_dictionary)
+        lora_managers_temporal = []
+        unet_lora_params_temporal_list = []
+        optimizer_temporal_list = []
+        lr_scheduler_temporal_list = []
+
+        for _ in range(temporal_lora_num):
+            lora_manager_temporal = LoraHandler(
+                use_unet_lora=use_unet_lora, unet_replace_modules=["TransformerTemporalModel"])
+
+            unet_lora_params_temporal, unet_negation_temporal = lora_manager_temporal.add_lora_to_model(
+                use_unet_lora, unet, lora_manager_temporal.unet_replace_modules, lora_unet_dropout,
+                lora_path + f'/temporal_{len(lora_managers_temporal)}/lora/', r=lora_rank)
+
+            lora_managers_temporal.append(lora_manager_temporal)
+            unet_lora_params_temporal_list.append(unet_lora_params_temporal)
+
+            optimizer_temporal = optimizer_cls(
+                create_optimizer_params([param_optim(unet_lora_params_temporal, use_unet_lora, is_lora=True,
+                                                     extra_params={
+                                                         **{"lr": learning_rate}, **extra_unet_params}
+                                                     )], learning_rate),
+                lr=learning_rate,
+                betas=(adam_beta1, adam_beta2),
+                weight_decay=adam_weight_decay,
+                eps=adam_epsilon,
+            )
+
+            optimizer_temporal_list.append(optimizer_temporal)
+
+            lr_scheduler_temporal = get_scheduler(
+                lr_scheduler,
+                optimizer=optimizer_temporal,
+                num_warmup_steps=lr_warmup_steps * gradient_accumulation_steps,
+                num_training_steps=max_train_steps * gradient_accumulation_steps,
+            )
+            lr_scheduler_temporal_list.append(lr_scheduler_temporal)
+
+        # For motion dataset, return lists
+        return (lora_managers_temporal, unet_lora_params_temporal_list,
+                unet_negation_temporal, optimizer_temporal_list, lr_scheduler_temporal_list)
+
+    else:
+        # For regular dataset, one temporal lora
+        lora_manager_temporal = LoraHandler(
+            use_unet_lora=use_unet_lora, unet_replace_modules=["TransformerTemporalModel"])
+
+        unet_lora_params_temporal, unet_negation_temporal = lora_manager_temporal.add_lora_to_model(
+            use_unet_lora, unet, lora_manager_temporal.unet_replace_modules, lora_unet_dropout,
+            lora_path + '/temporal/lora/', r=lora_rank)
+
+        optimizer_temporal = optimizer_cls(
+            create_optimizer_params([param_optim(unet_lora_params_temporal, use_unet_lora, is_lora=True,
+                                                 extra_params={
+                                                     **{"lr": learning_rate}, **extra_unet_params}
+                                                 )], learning_rate),
+            lr=learning_rate,
+            betas=(adam_beta1, adam_beta2),
+            weight_decay=adam_weight_decay,
+            eps=adam_epsilon,
+        )
+
+        lr_scheduler_temporal = get_scheduler(
+            lr_scheduler,
+            optimizer=optimizer_temporal,
+            num_warmup_steps=lr_warmup_steps * gradient_accumulation_steps,
+            num_training_steps=max_train_steps * gradient_accumulation_steps,
+        )
+
+        return (lora_manager_temporal, unet_lora_params_temporal,
+                unet_negation_temporal, optimizer_temporal, lr_scheduler_temporal)
+
+
 def setup_lora_components(
     unet,
     train_temporal_lora: bool,
@@ -47,44 +156,33 @@ def setup_lora_components(
     # Initialize the optimizer
     optimizer_cls = get_optimizer(use_8bit_adam)
 
-    # Temporal LoRA
-    if train_temporal_lora:
-        # one temporal lora
-        lora_manager_temporal = LoraHandler(
-            use_unet_lora=use_unet_lora, unet_replace_modules=["TransformerTemporalModel"])
-
-        unet_lora_params_temporal, unet_negation_temporal = lora_manager_temporal.add_lora_to_model(
-            use_unet_lora, unet, lora_manager_temporal.unet_replace_modules, lora_unet_dropout,
-            lora_path + '/temporal/lora/', r=lora_rank)
-
-        optimizer_temporal = optimizer_cls(
-            create_optimizer_params([param_optim(unet_lora_params_temporal, use_unet_lora, is_lora=True,
-                                                 extra_params={
-                                                     **{"lr": learning_rate}, **extra_unet_params}
-                                                 )], learning_rate),
-            lr=learning_rate,
-            betas=(adam_beta1, adam_beta2),
-            weight_decay=adam_weight_decay,
-            eps=adam_epsilon,
-        )
-
-        lr_scheduler_temporal = get_scheduler(
-            lr_scheduler,
-            optimizer=optimizer_temporal,
-            num_warmup_steps=lr_warmup_steps * gradient_accumulation_steps,
-            num_training_steps=max_train_steps * gradient_accumulation_steps,
-        )
-    else:
-        lora_manager_temporal = None
-        unet_lora_params_temporal, unet_negation_temporal = [], []
-        optimizer_temporal = None
-        lr_scheduler_temporal = None
+    # Setup Temporal LoRA
+    lora_manager_temporal, unet_lora_params_temporal, unet_negation_temporal, optimizer_temporal, lr_scheduler_temporal = setup_temporal_lora(
+        unet=unet,
+        train_temporal_lora=train_temporal_lora,
+        train_dataset=train_dataset,
+        use_unet_lora=use_unet_lora,
+        lora_unet_dropout=lora_unet_dropout,
+        lora_path=lora_path,
+        lora_rank=lora_rank,
+        learning_rate=learning_rate,
+        extra_unet_params=extra_unet_params,
+        adam_beta1=adam_beta1,
+        adam_beta2=adam_beta2,
+        adam_weight_decay=adam_weight_decay,
+        adam_epsilon=adam_epsilon,
+        lr_scheduler=lr_scheduler,
+        lr_warmup_steps=lr_warmup_steps,
+        gradient_accumulation_steps=gradient_accumulation_steps,
+        max_train_steps=max_train_steps,
+        optimizer_cls=optimizer_cls
+    )
 
     # Spatial LoRAs
     if single_spatial_lora:
         spatial_lora_num = 1
     else:
-        # one spatial lora for each video
+        # For all datasets, one spatial lora for each video
         spatial_lora_num = train_dataset.__len__()
 
     lora_managers_spatial = []
