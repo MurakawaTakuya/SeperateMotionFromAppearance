@@ -97,6 +97,7 @@ class TextToVideoModel:
         lora_unet_dropout: float = 0.1,
         logger_type: str = 'tensorboard',
         disable_comet: bool = False,
+        save_preview: bool = False,
         **kwargs
     ):
         # Store all parameters as instance variables
@@ -149,6 +150,7 @@ class TextToVideoModel:
         self.lora_unet_dropout = lora_unet_dropout
         self.logger_type = logger_type
         self.disable_comet = disable_comet
+        self.save_preview = save_preview
         self.kwargs = kwargs
 
         # Initialize components
@@ -213,8 +215,19 @@ class TextToVideoModel:
 
     def _setup_training_components(self):
         """Setup training datasets and LoRA components"""
+        # プレビュー保存パラメータをtrain_dataに追加
+        train_data_with_preview = self.train_data.copy()
+        if self.save_preview:
+            train_data_with_preview['save_preview'] = True
+            # プレビューディレクトリが指定されていない場合はoutput_dir/previewをデフォルトに
+            if 'preview_dir' not in train_data_with_preview:
+                train_data_with_preview['preview_dir'] = None  # Noneの場合はoutput_dir/previewが使用される
+
         # Get training datasets
-        self.train_datasets = get_train_dataset(self.dataset_types, self.train_data, self.tokenizer)
+        self.train_datasets = get_train_dataset(self.dataset_types, train_data_with_preview, self.tokenizer)
+
+        # データセットにoutput_dirを設定
+        self._set_dataset_output_dir()
 
         # Process extra training data
         try:
@@ -407,6 +420,9 @@ class TextToVideoModel:
         with self.accelerator.accumulate(self.unet), self.accelerator.accumulate(self.text_encoder):
             text_prompt = batch['text_prompt'][0]
 
+            # データセットにステップ情報を渡す（プレビュー保存用）
+            self._update_dataset_steps(step, global_step)
+
             # Setup masking
             mask_temporal_lora, mask_spatial_lora = self._setup_masking()
 
@@ -442,6 +458,22 @@ class TextToVideoModel:
             )
 
         return global_step
+
+    def _set_dataset_output_dir(self):
+        """データセットにoutput_dirを設定する"""
+        # train_datasetsの各データセットにoutput_dirを設定
+        for dataset in self.train_datasets:
+            if hasattr(dataset, 'output_dir'):
+                dataset.output_dir = self.output_dir
+
+    def _update_dataset_steps(self, step, global_step):
+        """データセットにステップ情報を渡す（プレビュー保存用）"""
+        # train_datasetsの各データセットにステップ情報を設定
+        for dataset in self.train_datasets:
+            if hasattr(dataset, 'current_step'):
+                dataset.current_step = step
+            if hasattr(dataset, 'current_global_step'):
+                dataset.current_global_step = global_step
 
     def _log_metrics(self, metrics_dict, step):
         """Log metrics to Comet"""

@@ -56,6 +56,9 @@ train_data:
   # The number of frames to sample. The higher this number, the higher the VRAM (acts similar to batch size).
   n_sample_frames: 16
 
+  # Save preview of trimmed training video during training
+  save_preview: True
+
   # Path to the multiple videos.
   # TODO: 全クラスのパスを入れる
   path: "train_data/HMDB51_and_Activity_net/"

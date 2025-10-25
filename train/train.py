@@ -64,6 +64,7 @@ def main(
         lora_unet_dropout: float = 0.1,
         logger_type: str = 'tensorboard',
         disable_comet: bool = False,
+        save_preview: bool = False,
         **kwargs
 ):
     """
@@ -129,6 +130,7 @@ def main(
         lora_unet_dropout=lora_unet_dropout,
         logger_type=logger_type,
         disable_comet=disable_comet,
+        save_preview=save_preview,
         **kwargs
     )
 
@@ -144,6 +146,10 @@ def main_cli():
                         help="Disable Comet logging")
     parser.add_argument("--dc", action="store_true",
                         help="Short form for --disable_comet")
+    parser.add_argument("--save_preview", action="store_true",
+                        help="Enable video preview saving during training")
+    parser.add_argument("--preview_dir", type=str, default=None,
+                        help="Directory to save preview videos of trimmed training videos (default: output_dir/preview)")
     args = parser.parse_args()
 
     # Load config from file
@@ -152,6 +158,14 @@ def main_cli():
     # Override disable_comet if specified via command line
     if args.disable_comet or args.dc:
         config.disable_comet = True
+
+    # Override save_preview if specified via command line
+    if args.save_preview:
+        config.train_data.save_preview = True
+
+    # Override preview_dir if specified via command line
+    if args.preview_dir:
+        config.train_data.preview_dir = args.preview_dir
 
     main(**config)
 

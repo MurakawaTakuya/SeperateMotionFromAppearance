@@ -13,6 +13,7 @@ from glob import glob
 from PIL import Image
 from itertools import islice
 from .bucketing import sensible_buckets
+from .video_preview import save_video_preview, create_preview_filename
 
 decord.bridge.set_bridge('torch')
 
@@ -486,6 +487,8 @@ class VideoFolderDataset(Dataset):
         path: str = "./data",
         fallback_prompt: str = "",
         use_bucketing: bool = False,
+        save_preview: bool = False,
+        preview_dir: str = None,
         **kwargs
     ):
         self.tokenizer = tokenizer
@@ -501,6 +504,13 @@ class VideoFolderDataset(Dataset):
         self.n_sample_frames = n_sample_frames
         self.fps = fps
 
+        # プレビュー保存機能の設定
+        self.save_preview = save_preview
+        self.preview_dir = preview_dir
+        self.output_dir = None  # 後でモデルから設定される
+        self.current_step = 0
+        self.current_global_step = 0
+
     def get_frame_buckets(self, vr):
         h, w, c = vr[0].shape
         width, height = sensible_buckets(self.width, self.height, w, h)
@@ -508,7 +518,7 @@ class VideoFolderDataset(Dataset):
 
         return resize
 
-    def get_frame_batch(self, vr, resize=None):
+    def get_frame_batch(self, vr, resize=None, vid_path=None):
         n_sample_frames = self.n_sample_frames
         native_fps = vr.get_avg_fps()
 
@@ -527,16 +537,38 @@ class VideoFolderDataset(Dataset):
 
         if resize is not None:
             video = resize(video)
+
+        # プレビュー動画を保存
+        if self.save_preview and vid_path is not None:
+            try:
+                # 動画を (f, h, w, c) の形状に戻して保存
+                video_for_preview = rearrange(video, "f c h w -> f h w c")
+                preview_path = create_preview_filename(
+                    self.current_step,
+                    self.current_global_step,
+                    vid_path,
+                    self.output_dir,
+                    self.preview_dir
+                )
+                save_video_preview(video_for_preview, preview_path, self.fps)
+                print(f"プレビュー動画を保存しました: {preview_path}")
+            except Exception as e:
+                print(f"プレビュー動画の保存に失敗しました: {e}")
+
         return video, vr
 
     def process_video_wrapper(self, vid_path):
+        # get_frame_batchにvid_pathを渡すためのラッパー関数を作成
+        def get_frame_batch_wrapper(vr, resize=None):
+            return self.get_frame_batch(vr, resize, vid_path)
+
         video, vr = process_video(
             vid_path,
             self.use_bucketing,
             self.width,
             self.height,
             self.get_frame_buckets,
-            self.get_frame_batch
+            get_frame_batch_wrapper
         )
         return video, vr
 
@@ -580,6 +612,8 @@ class MotionDataset(Dataset):
         use_bucketing: bool = False,
         verb_dictionary: list = None,
         target_verb: list = None,
+        save_preview: bool = False,
+        preview_dir: str = None,
         **kwargs
     ):
         self.tokenizer = tokenizer
@@ -590,6 +624,13 @@ class MotionDataset(Dataset):
         self.n_sample_frames = n_sample_frames
         self.fps = fps
         self.path = path
+
+        # プレビュー保存機能の設定
+        self.save_preview = save_preview
+        self.preview_dir = preview_dir
+        self.output_dir = None  # 後でモデルから設定される
+        self.current_step = 0
+        self.current_global_step = 0
 
         # verb_dictionaryとtarget_verbの検証
         if verb_dictionary is None or len(verb_dictionary) == 0:
@@ -626,7 +667,7 @@ class MotionDataset(Dataset):
         resize = T.transforms.Resize((height, width), antialias=True)
         return resize
 
-    def get_frame_batch(self, vr, resize=None):
+    def get_frame_batch(self, vr, resize=None, vid_path=None):
         n_sample_frames = self.n_sample_frames
         native_fps = vr.get_avg_fps()
 
@@ -645,16 +686,38 @@ class MotionDataset(Dataset):
 
         if resize is not None:
             video = resize(video)
+
+        # プレビュー動画を保存
+        if self.save_preview and vid_path is not None:
+            try:
+                # 動画を (f, h, w, c) の形状に戻して保存
+                video_for_preview = rearrange(video, "f c h w -> f h w c")
+                preview_path = create_preview_filename(
+                    self.current_step,
+                    self.current_global_step,
+                    vid_path,
+                    self.output_dir,
+                    self.preview_dir
+                )
+                save_video_preview(video_for_preview, preview_path, self.fps)
+                print(f"プレビュー動画を保存しました: {preview_path}")
+            except Exception as e:
+                print(f"プレビュー動画の保存に失敗しました: {e}")
+
         return video, vr
 
     def process_video_wrapper(self, vid_path):
+        # get_frame_batchにvid_pathを渡すためのラッパー関数を作成
+        def get_frame_batch_wrapper(vr, resize=None):
+            return self.get_frame_batch(vr, resize, vid_path)
+
         video, vr = process_video(
             vid_path,
             self.use_bucketing,
             self.width,
             self.height,
             self.get_frame_buckets,
-            self.get_frame_batch
+            get_frame_batch_wrapper
         )
         return video, vr
 
